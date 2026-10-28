@@ -493,12 +493,26 @@ function ring(cx, cy, r, fill, stroke, lw) {                 // a circle of radi
 
 const FLY_W = { jet: 50, drone: 42, missile: 15, satellite: 78 };      // on-screen width of each flyer's sprite
 function drawRaid(sim) {
-  const t = sim.t, mine = sim.mode === 'attack';
-  if (mine) {                                            // no-landing zone around the enemy base
-    const b = sim.bounds, pts = [A.iso(b.x0 - 1, b.y0 - 1), A.iso(b.x1 + 1, b.y0 - 1), A.iso(b.x1 + 1, b.y1 + 1), A.iso(b.x0 - 1, b.y1 + 1)];
-    ctx.setLineDash([10, 8]);
-    A.poly(ctx, pts, 'rgba(255,60,40,.08)', 'rgba(255,90,70,.7)', 3);
-    ctx.setLineDash([]);
+  const t = sim.t, war = sim.mode === 'war';
+  if (war) {                                             // your country is tinted blue, theirs red; every building gets a team marking
+    const L = sim.lay, vx0 = cam.x - 80, vx1 = cam.x + vw / cam.z + 80, vy0 = cam.y - 40, vy1 = cam.y + vh / cam.z + 40;
+    for (const team of [1, 2]) {
+      ctx.fillStyle = team === 1 ? 'rgba(70,150,255,.22)' : 'rgba(255,70,50,.14)';
+      ctx.beginPath();
+      for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) {
+        if (L.side[y * L.w + x] !== team) continue;
+        const p = A.iso(x, y);
+        if (p.x < vx0 || p.x > vx1 || p.y < vy0 || p.y > vy1) continue;
+        const q = A.iso(x + 1, y), r = A.iso(x + 1, y + 1), s2 = A.iso(x, y + 1);
+        ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.lineTo(r.x, r.y); ctx.lineTo(s2.x, s2.y); ctx.closePath();
+      }
+      ctx.fill();
+    }
+    for (const b of sim.buildings) {
+      if (!b.alive) continue;
+      const us = b.side === 'us', o = A.iso(b.x, b.y), w2 = b.size * TW / 2, h2 = b.size * TH / 2;
+      A.poly(ctx, [o, { x: o.x + w2, y: o.y + h2 }, { x: o.x, y: o.y + 2 * h2 }, { x: o.x - w2, y: o.y + h2 }], us ? 'rgba(70,150,255,.18)' : 'rgba(255,70,50,.16)', us ? '#4aa3ff' : '#ff5a45', 2);
+    }
   }
   for (const b of sim.buildings) {
     if (b.alive && b.tower) ring(b.cx, b.cy, b.tower.range, null, b.tower.targets === 'air' ? 'rgba(120,200,255,.35)' : 'rgba(255,225,120,.3)', 2);
@@ -511,13 +525,13 @@ function drawRaid(sim) {
   for (const s of sim.strikes) {
     const k = (t - s.armedAt) / (s.fireAt - s.armedAt);
     ctx.setLineDash([8, 6]);
-    ring(s.x, s.y, (mine ? E2.RAID.bomb : E2.RAID.strike).radius * (1.1 - 0.1 * k), 'rgba(255,60,40,.12)', `rgba(255,80,60,${0.6 + 0.4 * Math.sin(t * 14)})`, 3);
+    ring(s.x, s.y, (war ? E2.RAID.bomb : E2.RAID.strike).radius * (1.1 - 0.1 * k), 'rgba(255,60,40,.12)', `rgba(255,80,60,${0.6 + 0.4 * Math.sin(t * 14)})`, 3);
     ctx.setLineDash([]);
     const p = A.iso(s.x, s.y); ctx.font = '26px system-ui, "Segoe UI Emoji", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✈', p.x, p.y);
   }
   for (const u of sim.units) {
     if (!u.alive) continue;
-    const p = A.iso(u.x, u.y), air = u.air, alt = u.type === 'satellite' ? 64 : air ? 26 : 0, y0 = p.y - alt;
+    const mine = u.side === 'us', p = A.iso(u.x, u.y), air = u.air, alt = u.type === 'satellite' ? 64 : air ? 26 : 0, y0 = p.y - alt;
     if (air) { ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.beginPath(); ctx.ellipse(p.x, p.y, u.type === 'satellite' ? 20 : 9, u.type === 'satellite' ? 8 : 4, 0, 0, Math.PI * 2); ctx.fill(); }
     const spr = A.unitSprite(u.type, mine);
     if (spr) {                                                        // flyers use the Kenney space sprites, nose toward where they are heading
@@ -532,6 +546,7 @@ function drawRaid(sim) {
       if (u.ttl != null) bar(p.x - 12, y0 + h / 2 + 4, 24, u.ttl / (E2.UNITS[u.type].ttl || 1), '#e0b23c');     // time left in orbit
       continue;
     }
+    if (u.boat) A.drawShip(ctx, 1, p.x, p.y + 4, (u.vx || 0) - (u.vy || 0) < 0, 1, 0.55);         // a transport ship carries the troops over the sea
     ctx.save(); ctx.translate(p.x, y0); ctx.scale(1.5, 1.5);
     const col = mine ? { a: '#2f7fe0', b: '#1f4f9a', c: '#2a6bc0', d: '#3a8ae6' } : { a: '#d2403a', b: '#8a1f1a', c: '#b02a22', d: '#b03a6a' };
     ctx.fillStyle = col.a; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2;
@@ -573,9 +588,16 @@ function setRaid(sim) {
   for (const p of sim.pending) corners.push(A.iso(p.x, p.y));        // frame the raiders' starting points too
   const xs = corners.map(c => c.x), ys = corners.map(c => c.y);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-  cam.z = Math.max(Math.min(vw / (x1 - x0), vh / (y1 - y0)) * 0.92, vw / (22 * TW));
-  minZ = Math.min(minZ, cam.z * 0.7);
-  cam.x = (x0 + x1) / 2 - vw / 2 / cam.z; cam.y = (y0 + y1) / 2 - vh / 2 / cam.z;
+  const full = Math.min(vw / (x1 - x0), vh / (y1 - y0)) * 0.92;      // the whole battlefield on screen
+  cam.z = Math.max(full, vw / (22 * TW));
+  let mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  if (sim.mode === 'war') {                                         // two countries are bigger than the screen: start on the front between the two HQs
+    const hqs = sim.buildings.filter(b => b.type === 'hq').map(b => A.iso(b.cx, b.cy));
+    if (hqs.length) { mx = hqs.reduce((a, p) => a + p.x, 0) / hqs.length; my = hqs.reduce((a, p) => a + p.y, 0) / hqs.length; }
+    cam.z = Math.max(full, vw / (22 * TW));
+  }
+  minZ = Math.min(minZ, full * 0.6, cam.z * 0.7);
+  cam.x = mx - vw / 2 / cam.z; cam.y = my - vh / 2 / cam.z;
 }
 function clearRaid() {
   raidSim = null;

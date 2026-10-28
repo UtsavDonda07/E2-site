@@ -494,10 +494,3 @@ button { font: inherit; color: var(--text); cursor: pointer; }
 #wArmy { margin-left: auto; }
 
 /* Force panel on the World map while an attack is travelling */
-.sk-groups { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.sk-g { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: #f7f5ec; border: 2px solid #b8b3a4; border-radius: 12px; font-size: 14px; font-weight: 800; color: #2b2a27; }
-.sk-g .sk-i .uimg { height: 24px; max-width: 30px; vertical-align: middle; }
-.sk-g .sk-i { font-size: 22px; line-height: 1; }
-.sk-g.in { background: #dff5c4; border-color: #4fb800; }
-.sk-eta { color: #6a625d; font-variant-numeric: tabular-nums; }
-.sk-g.in .sk-eta { color: #2a7a00; }

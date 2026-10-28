@@ -87,7 +87,7 @@ function updateHud() {
   $('xpFill').style.width = (lv.into / lv.need * 100) + '%';
 
   const ban = $('banner'), info = E2.raidview && E2.raidview.bannerText(now);
-  if (info && (left <= 0 || info.strike)) { ban.textContent = info.text; ban.classList.remove('hidden'); } else ban.classList.add('hidden');
+  if (info && left <= 0) { ban.textContent = info.text; ban.classList.remove('hidden'); } else ban.classList.add('hidden');
 }
 
 function setHome() {

@@ -11,7 +11,7 @@ const B = E2.BUILDINGS;
 let S = null;
 let memorySave = null;          // fallback when localStorage is unavailable
 let gridCache = null;
-let enemyView = null;           // { id, grid, buildings } while an attack is shown
+let enemyView = null;           // { id, grid, buildings, war } while a war is shown
 
 const newRaidState = createdAt => ({ nextAt: createdAt + E2.RAID.firstDelay, shieldUntil: 0, pending: null, faced: 0, history: [] });
 const emptyArmy = () => Object.fromEntries(E2.ARMY_KEYS.map(k => [k, 0]));
@@ -77,15 +77,32 @@ function switchView(id) {
   save();
   return true;
 }
-function enterEnemy(enemy) {
-  enemyView = { id: enemy.id, grid: mkGrid(E2.byId(enemy.id)), buildings: enemy.buildings };
-  S.buildings = enemy.buildings;
+// A war shows both countries on one map: yours (with your own buildings) and the enemy's. Building copies carry their side and
+// are moved to their country's place on the combined grid; the real ones are left alone until the war is settled.
+function enterWar(enemy, fromId) {
+  const lay = E2.enemy.warLayout(fromId, enemy.id), L = S.land[fromId];
+  const ours = L.buildings.map(b => Object.assign({}, b, { x: b.x + lay.home.x, y: b.y + lay.home.y, side: 'us' }));
+  const theirs = enemy.buildings.map(b => Object.assign({}, b, { x: b.x + lay.target.x, y: b.y + lay.target.y, side: 'them' }));
+  const grid = { w: lay.w, h: lay.h, rows: lay.rows, side: lay.side, isLand: (x, y) => x >= 0 && y >= 0 && x < lay.w && y < lay.h && lay.side[y * lay.w + x] > 0 };
+  // Scenery: your cleared land stays clear, the enemy's is untouched.
+  const gone = new Set(L.cleared), scenery = [];
+  const own = E2.byId(fromId);
+  const add = (list, off, skip) => { for (const o of list) {
+    if (skip && skip.has(o.cell)) continue;
+    const tx = o.tx + off.x, ty = o.ty + off.y;
+    scenery.push(Object.assign({}, o, { tx, ty, cell: ty * lay.w + tx }));
+  } };
+  add(E2.obstaclesOf(own), lay.home, gone);
+  add(E2.obstaclesOf(E2.byId(enemy.id)), lay.target, null);
+  enemyView = { id: enemy.id, grid, buildings: ours.concat(theirs), war: { fromId, lay }, scenery };
+  S.buildings = enemyView.buildings;
 }
 function exitEnemy() {
   enemyView = null;
   S.buildings = S.land[S.view].buildings;
 }
 const inEnemyView = () => !!enemyView;
+const warLayout = () => enemyView && enemyView.war.lay;
 
 // Everything the raid engine needs about your homeland.
 const raidView = () => ({ homeland: S.homeland, raid: S.raid, buildings: homeBuildings(), owned: owned() });
@@ -134,8 +151,8 @@ function obstacleMap() {
   return obsCache.map;
 }
 const obstacleAt = (x, y) => obstacleMap().get(y * grid().w + x) || null;
-// What the map should draw: your remaining obstacles, or an enemy country's untouched scenery.
-const visualObstacles = () => enemyView ? E2.obstaclesOf(E2.byId(enemyView.id)) : [...obstacleMap().values()];
+// What the map should draw: your remaining obstacles, or the scenery of a war map.
+const visualObstacles = () => enemyView ? enemyView.scenery : [...obstacleMap().values()];
 const jobs = () => (enemyView ? [] : S.land[S.view].jobs);
 
 function startClear(x, y, now = Date.now()) {
@@ -504,18 +521,30 @@ function applyRaid(raid, outcome, now = Date.now()) {
   return report;
 }
 
-// ---------- Your attacks ----------
-// outcome: from E2.raid.attackOutcome. enemy: from E2.enemy.generate. Returns a report for the UI.
-function applyAttack(enemy, outcome, now = Date.now()) {
-  const report = { targetId: enemy.id, win: outcome.win, stars: outcome.stars, pct: outcome.pct, loot: {}, captured: false, lost: {}, ranked: null };
+// ---------- Wars you start ----------
+// outcome: from E2.raid.warOutcome. enemy: from E2.enemy.generate. fromId: the territory your side of the war was fought on.
+// Returns a report for the UI.
+function applyWar(enemy, fromId, outcome, now = Date.now()) {
+  const report = { targetId: enemy.id, win: outcome.win, stars: outcome.stars, pct: outcome.pct, loot: {}, captured: false, lost: {}, ranked: null,
+    defeated: outcome.overrun, ruined: outcome.ourDestroyed.length, stolen: {}, reason: outcome.endReason };
 
   for (const k of E2.ARMY_KEYS) {                       // survivors and units never sent go home
     const had = S.army[k], sent = outcome.deployed[k] || 0, back = outcome.survivors[k] || 0;
     S.army[k] = had - sent + back;
     if (sent - back > 0) report.lost[k] = sent - back;
   }
+  const mine = S.land[fromId].buildings;                // what the enemy knocked down at home
+  for (const uid of outcome.ourDestroyed) { const b = mine.find(x => x.uid === uid); if (b) b.ruined = true; }
 
-  if (outcome.stars >= 1) {
+  if (outcome.overrun) {                                // your headquarters fell: part of the stock is taken
+    const prot = protectedAmount();
+    for (const k of E2.RES_KEYS) {
+      const take = Math.floor(Math.max(0, S.resources[k] - prot) * 0.25);
+      S.resources[k] -= take;
+      if (take > 0) report.stolen[k] = take;
+    }
+    S.raid.shieldUntil = Math.max(S.raid.shieldUntil, now + E2.RAID.lossShield);
+  } else if (outcome.stars >= 1) {
     const share = [0, 0.4, 0.7, 1][outcome.stars];
     for (const k of E2.RES_KEYS) {
       const room = Math.max(0, caps() - S.resources[k]);
@@ -524,13 +553,13 @@ function applyAttack(enemy, outcome, now = Date.now()) {
       if (take > 0) report.loot[k] = take;
     }
   }
-  if (outcome.hqDown && !S.land[enemy.id]) {
+  if (outcome.hqDown && !outcome.overrun && !S.land[enemy.id]) {
     addColony(enemy.id, now);
     report.captured = true;
     S.xp += 50 + 10 * E2.byId(enemy.id).power;
     report.ranked = E2.rankOf(S.colonies.length);
   }
-  S.raid.history.push({ at: now, from: enemy.id, win: outcome.stars >= 1, kind: 'attack' });
+  S.raid.history.push({ at: now, from: enemy.id, win: report.win && !outcome.overrun, kind: 'attack' });
   if (S.raid.history.length > 30) S.raid.history.shift();
   save();
   return report;
@@ -541,41 +570,26 @@ function cheat() {
   if (!E2.DEBUG || !S) return;
   for (const k of E2.RES_KEYS) S.resources[k] = Math.max(S.resources[k], 999999);
   for (const k of E2.ARMY_KEYS) S.army[k] = Math.max(S.army[k] || 0, 25);
+  if (!enemyView && S.view === S.homeland && S.buildings.length < 6) {          // a bare homeland gets a defended base to fight a war from
+    const h = hq(), now = Date.now();
+    [['gunTurret', 4], ['missileBattery', 2], ['antiAir', 2], ['barracks', 1], ['goldMine', 1], ['oilRefinery', 1]].forEach(([type, n], ti) => {
+      for (let i = 0; i < n; i++) {
+        const a = (ti * 2.1 + i * 2.7), r = 4 + (i % 2) * 2;
+        placeStarter(type, Math.min(3, B[type].levels.length), 1, h.x + 1.5 + Math.cos(a) * r, h.y + 1.5 + Math.sin(a) * r, now);
+      }
+    });
+  }
   save();
 }
 
-// ---------- A strike force on its way to another country ----------
-// S.strike = { target, from, km, startAt, groups: { unitType: { n, secs, arriveAt } } }. Units stay in S.army until the battle is settled.
-function strikePlan(targetId) {
-  const t = E2.byId(targetId);
-  let from = null, km = Infinity;
-  for (const id of owned()) {                              // launch from the nearest territory
-    const d = E2.distanceKm(E2.byId(id), t);
-    if (d < km) { km = d; from = id; }
-  }
-  const groups = {};
-  for (const k of E2.ARMY_KEYS) if (S.army[k] > 0) groups[k] = { n: S.army[k], secs: E2.travelSecs(k, km) };
-  return { target: targetId, from, km: Math.round(km), groups };
-}
-function startStrike(targetId, now = Date.now()) {
-  if (S.strike) return null;
-  const plan = strikePlan(targetId);
-  if (!Object.keys(plan.groups).length) return null;
-  for (const g of Object.values(plan.groups)) g.arriveAt = now + g.secs * 1000;
-  S.strike = Object.assign(plan, { startAt: now });
-  save();
-  return S.strike;
-}
-const strike = () => (S && S.strike) || null;
-function endStrike() { if (S) { S.strike = null; save(); } }
 
 E2.state = {
-  cheat, strikePlan, startStrike, strike, endStrike,  get, load, save, reset, create, grid, tick, viewId, owned, all, homeBuildings, switchView, enterEnemy, exitEnemy, inEnemyView, raidView,
+  cheat, get, load, save, reset, create, grid, tick, viewId, owned, all, homeBuildings, switchView, enterWar, exitEnemy, warLayout, inEnemyView, raidView,
   hq, hqLevel, caps, maxLevelFor, maxCount, countOf, busy, freeBuilders, byUid,
   canAfford, missing, occupant, canPlace, placeBlock, upgradeBlock, obstacleAt, visualObstacles, jobs, startClear,
   startBuild, moveBlock, moveBuilding, startUpgrade, finishNow, collect, collectAll,
   harborCapacity, tradeTargets, tradeBlock, startTrade, trips,
   repairCost, repairTime, repairBlock, startRepair, applyRaid,
-  armyCapacity, armyUsed, labLevel, trainBlock, train, disband, applyAttack, addColony,
+  armyCapacity, armyUsed, labLevel, trainBlock, train, disband, applyWar, addColony,
 };
 })();

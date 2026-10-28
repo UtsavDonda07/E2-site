@@ -36,7 +36,6 @@ function clock() {
   if (!E2.state.get()) return;
   const done = E2.state.tick(Date.now());
   if (done.length) { E2.ui.announce(done); E2.state.save(); }
-  E2.raidview.checkStrike(Date.now());
   if ($('screenBase').classList.contains('hidden')) return;
   E2.ui.tick();
   E2.raidview.check(Date.now());
