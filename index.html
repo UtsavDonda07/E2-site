@@ -11,16 +11,17 @@
 <body>
 <div id="app">
 
-  <!-- Country select -->
+  <!-- Country select: just a small dialog over the loading background -->
   <section id="screenSelect" class="screen hidden">
-    <header class="topbar">
-      <div class="logo">♛ EMPEROR OF EMPERORS</div>
-      <div class="sub">Choose your homeland</div>
-    </header>
-    <canvas id="worldCanvas"></canvas>
-    <div id="pickCard" class="pick-card">Tap a country on the map, or search below.</div>
-    <input id="search" type="search" placeholder="Search country…" autocomplete="off">
-    <ul id="countryList"></ul>
+    <div class="ld-bg"></div>
+    <div class="modal-box sel-box">
+      <h3>Choose your homeland</h3>
+      <div class="dd">
+        <input id="search" type="text" placeholder="Search country…" autocomplete="off" autocapitalize="words" spellcheck="false">
+        <ul id="countryList" class="hidden"></ul>
+      </div>
+      <button id="btnChoose" class="btn primary choose" disabled>Select</button>
+    </div>
   </section>
 
   <!-- Base -->
@@ -87,6 +88,17 @@
     <div id="wSheet" class="sheet hidden"></div>
   </section>
 
+  <!-- Loading screen. Put your artwork in art/splash.webp (portrait, about 1080x2340, no text): it fills the background. -->
+  <div id="loading" class="loading">
+    <div class="ld-bg"></div>
+    <div class="ld-logo"><div class="l1">EMPEROR</div><div class="l2">of</div><div class="l3">EMPERORS</div></div>
+    <div class="ld-bottom">
+      <div class="ld-label">Loading</div>
+      <div class="ld-bar"><i id="ldFill"></i></div>
+      <div id="ldTip" class="ld-tip"></div>
+    </div>
+  </div>
+
   <div id="toasts"></div>
   <div id="modal" class="modal hidden"><div id="modalBox" class="modal-box"></div></div>
 </div>
@@ -107,5 +119,6 @@
 <script src="js/sfx.js"></script>
 <script src="js/tutorial.js"></script>
 <script src="js/main.js"></script>
+<script src="js/loading.js"></script>
 </body>
 </html>
