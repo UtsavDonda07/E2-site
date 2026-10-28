@@ -468,3 +468,27 @@ button { font: inherit; color: var(--text); cursor: pointer; }
 }
 .sel-box .btn.choose:disabled { filter: grayscale(.9) brightness(.85); opacity: .75; }
 .sel-box .btn.choose:active:not(:disabled) { transform: translateY(3px); box-shadow: inset 0 2px 0 rgba(255, 255, 255, .4), 0 1px 0 #2a6a00; filter: none; }
+
+
+/* ---------- World map screen: see-through header with chunky buttons, game-coloured map ---------- */
+#screenWorld { padding-top: 0; background: #1d5f8a; }
+.wtop { position: absolute; left: 0; right: 0; top: 0; z-index: 3; padding: calc(env(safe-area-inset-top) + 8px) 10px 14px; border-bottom: 0;
+  background: linear-gradient(rgba(6, 22, 40, .6), rgba(6, 22, 40, 0)); pointer-events: none; }
+.wtop > * { pointer-events: auto; }
+.wtitle { position: absolute; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 9px); text-align: center; pointer-events: none; }
+.wtitle b { font-size: 23px; font-weight: 900; color: #fff; letter-spacing: .3px; text-shadow: var(--chunky), 0 2px 0 #000; }
+.wtitle small { font-size: 13px; font-weight: 800; color: #ffd75a; text-shadow: var(--chunky); }
+.wtop .sq-btn, .wtop .chip-btn {
+  border: 3px solid #1c1308; border-radius: 12px; height: 46px; color: #fff; text-shadow: var(--chunky);
+  background: linear-gradient(#ffc15a 0%, #ff9a1f 48%, #ee5a12 52%, #e0430c 100%);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .55), 0 4px 0 #8a2a08, 0 6px 7px rgba(0, 0, 0, .4);
+}
+#wBack { width: 46px; font-size: 36px; font-weight: 900; line-height: 1; padding: 0 0 5px; }
+.wtop .chip-btn { padding: 0 12px 0 8px; gap: 6px; font-size: 17px; }
+.wtop .chip-btn .ic { width: 28px; height: 28px; padding: 0; background: none; border: 0; filter: drop-shadow(0 2px 1px rgba(0, 0, 0, .5)); }
+.wtop .sq-btn:active, .wtop .chip-btn:active { transform: translateY(3px); filter: none; box-shadow: inset 0 2px 0 rgba(255, 255, 255, .4), 0 1px 0 #8a2a08; }
+.wcard { min-height: 160px; position: relative; z-index: 2; }
+.wc-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+.wc-sub { margin-top: 4px; font-size: 14px; font-weight: 800; color: #4a4944; }
+.wc-btns { margin-top: 12px; }
+#wArmy { margin-left: auto; }

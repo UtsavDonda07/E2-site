@@ -60,10 +60,10 @@ function clamp() {
 function colorOf(c) {
   const S = E2.state.get();
   if (sel && c.id === sel.id) return '#ffffff';
-  if (c.id === S.homeland) return '#f0c24a';
-  if (S.colonies.includes(c.id)) return '#d99a2a';
-  if (reach.has(c.id)) return '#d2503f';
-  return c.playable ? '#3f6a8a' : '#2f4a63';
+  if (c.id === S.homeland) return '#ffd23a';
+  if (S.colonies.includes(c.id)) return '#f0a81c';
+  if (reach.has(c.id)) return '#e2553f';
+  return c.playable ? '#79b84c' : '#9bab8c';                     // neutral land: game green
 }
 
 const setCam = () => ctx.setTransform(view.dpr * cam.z, 0, 0, view.dpr * cam.z, view.dpr * cam.tx, view.dpr * cam.ty);
@@ -75,7 +75,7 @@ function draw() {
   g.addColorStop(0, '#2a7fb0'); g.addColorStop(1, '#1d5f8a');
   ctx.fillStyle = g; ctx.fillRect(0, 0, view.w, view.h);
   setCam();
-  ctx.lineWidth = Math.max(0.5, 1.2 / cam.z); ctx.strokeStyle = 'rgba(10,27,46,.8)'; ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(0.5, 1.2 / cam.z); ctx.strokeStyle = 'rgba(28,58,20,.85)'; ctx.lineJoin = 'round';
   for (const c of order) { ctx.fillStyle = colorOf(c); ctx.fill(paths.get(c.id)); ctx.stroke(paths.get(c.id)); }
   drawShips();
 }
@@ -165,7 +165,7 @@ function tap(x, y) {
 function renderCard() {
   const el = $('wCard'), S = E2.state.get();
   if (!sel) {
-    el.innerHTML = `<div class="hint">Tap a <b style="color:#ff9a8f">red</b> country to scout it. Conquer ${E2.WIN_COUNT} to become Emperor of Emperors.</div>`;
+    el.innerHTML = `<div class="hint">Tap a <b style="color:#d2392a">red</b> country to scout it. Conquer ${E2.WIN_COUNT} to become Emperor of Emperors.</div>`;
     return;
   }
   if (S.land[sel.id]) {
