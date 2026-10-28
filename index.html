@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b121b">
+<title>Emperor of Emperors</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%91%91%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- Country select -->
+  <section id="screenSelect" class="screen hidden">
+    <header class="topbar">
+      <div class="logo">♛ EMPEROR OF EMPERORS</div>
+      <div class="sub">Choose your homeland</div>
+    </header>
+    <canvas id="worldCanvas"></canvas>
+    <div id="pickCard" class="pick-card">Tap a country on the map, or search below.</div>
+    <input id="search" type="search" placeholder="Search country…" autocomplete="off">
+    <ul id="countryList"></ul>
+  </section>
+
+  <!-- Base -->
+  <section id="screenBase" class="screen hidden">
+    <canvas id="baseCanvas"></canvas>
+
+    <div id="hud">
+      <div class="hud-tl">
+        <div class="player">
+          <div class="lvl" id="lvlBadge">1</div>
+          <div class="plate"><div id="homeName" class="pname"></div><div class="xpbar"><i id="xpFill"></i></div></div>
+        </div>
+        <div class="stats">
+          <div id="builders" class="pill"></div>
+          <div id="shieldPill" class="pill hidden"></div>
+        </div>
+      </div>
+
+      <div id="resRow" class="hud-tr"></div>
+    </div>
+
+    <div id="banner" class="banner hidden"></div>
+
+    <div id="ctxBar" class="ctx hidden"></div>
+    <div id="tip" class="tip hidden"></div>
+
+    <div id="placePop" class="place-pop hidden">
+      <div class="pp-row">
+        <button id="placeCancel" class="pp-btn pp-no" aria-label="Cancel">&#x2715;</button>
+        <button id="placeOk" class="pp-btn pp-yes" aria-label="Build here">&#x2713;</button>
+      </div>
+      <div id="placeInfo" class="pp-why"></div>
+    </div>
+
+    <div id="bottomBar" class="bottom-bar">
+      <button id="btnAttack" class="corner attack"><span class="cico" id="atkIco"></span><span class="clabel">Attack!</span></button>
+      <button id="btnSettings" class="sq-btn gear" aria-label="Settings"></button>
+      <button id="btnBuild" class="corner shop"><span class="cico" id="shopIco"></span><span class="clabel">Shop</span></button>
+    </div>
+
+    <div id="raidBar" class="raid-bar hidden">
+      <div class="raid-top"><b id="raidTitle"></b><span id="raidStatus"></span></div>
+      <div class="progress"><i id="raidProg"></i></div>
+      <div id="tray" class="tray hidden"></div>
+      <div class="raid-btns">
+        <button id="btnStrike" class="btn primary">✈ Airstrike</button>
+        <button id="btnSpeed" class="btn">1x</button>
+        <button id="btnSkip" class="btn">Skip</button>
+      </div>
+    </div>
+
+    <div id="sheet" class="sheet hidden"></div>
+  </section>
+
+  <!-- World map -->
+  <section id="screenWorld" class="screen hidden">
+    <header class="wtop">
+      <button id="wBack" class="sq-btn" aria-label="Back">‹</button>
+      <div class="wtitle"><b>World map</b><small id="wRank"></small></div>
+      <button id="wArmy" class="chip-btn"><span id="wArmyIco"></span><b>Army</b></button>
+    </header>
+    <canvas id="worldMapCanvas"></canvas>
+    <div id="wCard" class="wcard"></div>
+    <div id="wSheet" class="sheet hidden"></div>
+  </section>
+
+  <div id="toasts"></div>
+  <div id="modal" class="modal hidden"><div id="modalBox" class="modal-box"></div></div>
+</div>
+
+<script src="data/countries.js"></script>
+<script src="art/manifest.js"></script>
+<script src="js/defs.js"></script>
+<script src="js/bridge.js"></script>
+<script src="js/state.js"></script>
+<script src="js/raid.js"></script>
+<script src="js/enemy.js"></script>
+<script src="js/art.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/select.js"></script>
+<script src="js/base.js"></script>
+<script src="js/raidview.js"></script>
+<script src="js/worldmap.js"></script>
+<script src="js/sfx.js"></script>
+<script src="js/tutorial.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
