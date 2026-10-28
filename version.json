@@ -1,5 +1,5 @@
 {
-    "version":  20261028155000,
+    "version":  20261028155504,
     "files":  {
                   "art/advisor.webp":  "4d20e5aab36f3f65366b09ed248550af5f0bdfd2eca2e06eb552ce4b38b9ff7e",
                   "art/LICENSE-Kenney-CC0.txt":  "f5f520f81277128fb422aebe334d2f08e6d8e5f7face6008885d8ff920253724",
@@ -40,7 +40,7 @@
                   "js/bridge.js":  "a4b6e8b3369508fef6487d9afed88ef4c5af9d4b370f58fc2556cfe942e1237f",
                   "js/defs.js":  "20edac80726405fd1f823233a97eb87a293e6dd4372841ddd2f4722be169781f",
                   "js/enemy.js":  "c9bf73aba7a08922e78806659d739a7c9a5949723ede86b9aa5fa3812afe106f",
-                  "js/loading.js":  "061c4fa4f3c6d7805b044588de204ab30822287957312b4bb97cdae1997f6da6",
+                  "js/loading.js":  "cff57c8be16d5d33063513d701a9355678b47f443c749cdd193fb3a8d2c1bd7b",
                   "js/main.js":  "343b9c9a53432bb497e31be0fbc888494856223b579a5612f11560bb9a5829fa",
                   "js/raid.js":  "d81f5450eb22c530f055e2e35a84a49ce1ca0225e90c6eac3cc668f2434b2a5d",
                   "js/raidview.js":  "b128d927e84b4eb235462830cc9a02449f95d9c61692dd9adff3ad59c7f8454d",
