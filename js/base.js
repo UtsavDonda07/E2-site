@@ -37,6 +37,16 @@ function worldBounds() {
   }
   return (g._bounds = { x0, x1, y0, y1 });
 }
+// How far the camera may roam: the country plus the dim land around it.
+function roamBounds() {
+  const g = E2.state.grid(), b = worldBounds(), back = E2.state.backdrop();
+  if (!back || !back.length) return b;
+  if (g._roam && g._roamFor === back) return g._roam;
+  let x0 = b.x0, x1 = b.x1, y0 = b.y0, y1 = b.y1;
+  for (let i = 0; i < back.length; i += 2) { const p = A.iso(back[i], back[i + 1]); x0 = Math.min(x0, p.x - TW / 2); x1 = Math.max(x1, p.x + TW / 2); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y + TH + CLIFF); }
+  g._roamFor = back;
+  return (g._roam = { x0, x1, y0, y1 });
+}
 
 function resize() {
   const r = canvas.getBoundingClientRect();
@@ -63,7 +73,7 @@ function fitCamera(reset) {
 }
 
 function clampCam() {
-  const b = worldBounds(), m = 60;
+  const b = roamBounds(), m = 60;
   const cx = cam.x + vw / 2 / cam.z, cy = cam.y + vh / 2 / cam.z;
   const nx = Math.min(b.x1 + m, Math.max(b.x0 - m, cx)), ny = Math.min(b.y1 + m, Math.max(b.y0 - m, cy));
   cam.x = nx - vw / 2 / cam.z; cam.y = ny - vh / 2 / cam.z;
@@ -307,8 +317,31 @@ function obstacleHit(wx, wy) {
   return best;
 }
 
+// The dim countries around yours: plain, darkened land behind the real map, so the sea only shows where there is sea.
+let backKey = null, backSet = null, backList = null;
+function drawBackdrop(g, view) {
+  const raw = E2.state.backdrop();
+  if (!raw || !raw.length) return false;
+  if (backKey !== raw) {
+    backKey = raw; backSet = new Set(); backList = [];
+    for (let i = 0; i < raw.length; i += 2) { backSet.add(raw[i + 1] * 4096 + raw[i]); backList.push({ x: raw[i], y: raw[i + 1] }); }
+    backList.sort((a, b) => (a.x + a.y) - (b.x + b.y));
+  }
+  const land = (x, y) => g.isLand(x, y) || backSet.has(y * 4096 + x), hw = TW / 2;
+  for (const t of backList) {
+    const p = A.iso(t.x, t.y);
+    if (p.x < view.l - TW || p.x > view.r + TW || p.y < view.t - TH - CLIFF || p.y > view.b + TH || g.isLand(t.x, t.y)) continue;
+    const E = { x: p.x + hw, y: p.y + TH / 2 }, S = { x: p.x, y: p.y + TH }, W = { x: p.x - hw, y: p.y + TH / 2 };
+    if (!land(t.x + 1, t.y)) A.poly(ctx, [E, S, { x: S.x, y: S.y + CLIFF }, { x: E.x, y: E.y + CLIFF }], '#3c3a2c');
+    if (!land(t.x, t.y + 1)) A.poly(ctx, [W, S, { x: S.x, y: S.y + CLIFF }, { x: W.x, y: W.y + CLIFF }], '#4a4634');
+    A.poly(ctx, [p, E, S, W], '#4f7e48', 'rgba(20,50,30,.18)', 1);
+  }
+  return true;
+}
+
 function drawTerrain(g, view) {
   const hw = TW / 2, seedTint = 3;
+  drawBackdrop(g, view);
   for (let d = 0; d <= g.w + g.h - 2; d++) {
     for (let x = Math.max(0, d - g.h + 1); x <= Math.min(g.w - 1, d); x++) {
       const y = d - x;
@@ -369,7 +402,7 @@ const HUES = ['#2c6fd1', '#d2602a', '#2a9d4a'];
 function updateWorkers(dt) {
   if (E2.state.inEnemyView()) { workers = []; return; }
   const S = E2.state.get(), g = E2.state.grid(), a = anchor();
-  const n = Math.min(3, S.builders);
+  const n = Math.min(4, E2.state.totalBuilders());
   while (workers.length < n) {
     workers.push({ x: a.x + workers.length * 0.4, y: a.y + 2.2, tx: null, ty: null, wait: 0, mode: 'walk', hue: HUES[workers.length % 3] });
   }
@@ -494,24 +527,11 @@ function ring(cx, cy, r, fill, stroke, lw) {                 // a circle of radi
 const FLY_W = { jet: 50, drone: 42, missile: 15, satellite: 78 };      // on-screen width of each flyer's sprite
 function drawRaid(sim) {
   const t = sim.t, war = sim.mode === 'war';
-  if (war) {                                             // your country is tinted blue, theirs red; every building gets a team marking
-    const L = sim.lay, vx0 = cam.x - 80, vx1 = cam.x + vw / cam.z + 80, vy0 = cam.y - 40, vy1 = cam.y + vh / cam.z + 40;
-    for (const team of [1, 2]) {
-      ctx.fillStyle = team === 1 ? 'rgba(70,150,255,.22)' : 'rgba(255,70,50,.14)';
-      ctx.beginPath();
-      for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) {
-        if (L.side[y * L.w + x] !== team) continue;
-        const p = A.iso(x, y);
-        if (p.x < vx0 || p.x > vx1 || p.y < vy0 || p.y > vy1) continue;
-        const q = A.iso(x + 1, y), r = A.iso(x + 1, y + 1), s2 = A.iso(x, y + 1);
-        ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.lineTo(r.x, r.y); ctx.lineTo(s2.x, s2.y); ctx.closePath();
-      }
-      ctx.fill();
-    }
+  if (war) {                                             // the enemy buildings get a red marking
     for (const b of sim.buildings) {
-      if (!b.alive) continue;
-      const us = b.side === 'us', o = A.iso(b.x, b.y), w2 = b.size * TW / 2, h2 = b.size * TH / 2;
-      A.poly(ctx, [o, { x: o.x + w2, y: o.y + h2 }, { x: o.x, y: o.y + 2 * h2 }, { x: o.x - w2, y: o.y + h2 }], us ? 'rgba(70,150,255,.18)' : 'rgba(255,70,50,.16)', us ? '#4aa3ff' : '#ff5a45', 2);
+      if (!b.alive || b.side === 'us') continue;
+      const o = A.iso(b.x, b.y), w2 = b.size * TW / 2, h2 = b.size * TH / 2;
+      A.poly(ctx, [o, { x: o.x + w2, y: o.y + h2 }, { x: o.x, y: o.y + 2 * h2 }, { x: o.x - w2, y: o.y + h2 }], 'rgba(255,70,50,.16)', '#ff5a45', 2);
     }
   }
   for (const b of sim.buildings) {

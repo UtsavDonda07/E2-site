@@ -34,6 +34,7 @@ function load() {
     if (!d || d.v !== 2 || !E2.byId(d.homeland)) return false;      // v1 saves used a differently turned land grid
     if (!d.raid) d.raid = newRaidState(d.createdAt);
     d.xp = d.xp || 0;
+    d.resources = Object.assign({}, E2.START_RES, d.resources);        // saves from before food existed get a starting stock
     delete d.trophies;                                      // older saves had a trophy count that is no longer used
     d.army = Object.assign(emptyArmy(), d.army || {});
     d.colonies = d.colonies || [];
@@ -67,6 +68,8 @@ function grid() {
   return gridCache;
 }
 const viewId = () => enemyView ? enemyView.id : S.view;
+// Dim neighbouring land drawn behind the country being viewed (none during a war: its map has its own).
+const backdrop = () => enemyView ? null : E2.enemy.surroundings(S.view);
 const owned = () => [S.homeland].concat(S.colonies);
 const all = () => Object.values(S.land).flatMap(l => l.buildings);
 const homeBuildings = () => S.land[S.homeland].buildings;
@@ -123,7 +126,7 @@ const maxCount = type => B[type].maxCount[hqLevel() - 1];
 const countOf = type => S.buildings.filter(b => b.type === type).length;
 const jobCount = () => Object.values(S.land).reduce((n, l) => n + l.jobs.length, 0);
 const busy = () => all().filter(b => b.endAt).length + jobCount();      // a builder is busy on a building or clearing an obstacle
-const freeBuilders = () => S.builders - busy();
+const freeBuilders = () => totalBuilders() - busy();
 const byUid = uid => S.buildings.find(b => b.uid === uid) || all().find(b => b.uid === uid);
 const canAfford = cost => Object.entries(cost).every(([k, v]) => S.resources[k] >= v);
 const missing = cost => Object.entries(cost).filter(([k, v]) => S.resources[k] < v).map(([k]) => k);
@@ -192,12 +195,29 @@ function touchesSea(x, y, s, g) {
 // gap = extra empty cells required around the footprint (used for the starter layout).
 const canPlace = (type, x, y, gap = 0, ignoreObstacles = false) => placeBlock(type, x, y, gap, ignoreObstacles) === null;
 
+// ---------- People and food ----------
+// Houses, villages and cities hold the population. People and army eat food every hour; farms make it. With no food in store
+// the country is hungry: everything but farms produces at half speed. A big enough population brings extra builders.
+let hungry = false;
+const population = () => all().reduce((n, b) => n + (b.level >= 1 && !b.ruined ? E2.popOf(b.type, b.level) : 0), 0);
+const foodMade = () => all().reduce((n, b) => n + (b.type === 'farm' && b.level >= 1 && !b.ruined ? E2.rateOf('farm', b.level) : 0), 0);
+const foodEaten = () => population() * E2.POP.foodPerPerson + armyUsed() * E2.POP.foodPerArmySpace;
+const taxes = () => all().reduce((n, b) => n + (E2.popOf(b.type, b.level) && b.level >= 1 && !b.ruined ? E2.rateOf(b.type, b.level) : 0), 0);
+const popBuilders = () => E2.POP.builderAt.filter(n => population() >= n).length;
+const totalBuilders = () => S.builders + popBuilders();
+const isHungry = () => S.resources.food <= 0 && foodEaten() > 0;
+function eat(now) {
+  const dt = Math.min(Math.max(0, now - S.savedAt), E2.POP.maxOfflineHours * 3600000);
+  if (dt > 0) S.resources.food = Math.max(0, S.resources.food - foodEaten() * dt / 3600000);
+  hungry = isHungry();
+}
+
 // ---------- Production ----------
 function advance(b, t) {
   const def = B[b.type];
   if (def.produces && b.level >= 1 && !b.ruined && t > b.tickAt) {
-    const cap = E2.holdCap(b.type, b.level);
-    b.stored = Math.min(cap, b.stored + E2.rateOf(b.type, b.level) * (t - b.tickAt) / 3600000);
+    const cap = E2.holdCap(b.type, b.level), k = hungry && b.type !== 'farm' ? E2.POP.starveFactor : 1;
+    b.stored = Math.min(cap, b.stored + E2.rateOf(b.type, b.level) * k * (t - b.tickAt) / 3600000);
   }
   b.tickAt = Math.max(b.tickAt, t);
 }
@@ -205,6 +225,7 @@ function advance(b, t) {
 // Moves time forward: finishes constructions and fills collectors. Returns the buildings that finished.
 function tick(now) {
   const done = [];
+  eat(now);
   for (const [id, L] of Object.entries(S.land)) {           // finished obstacle jobs: the tree or rock is gone for good
     for (const j of L.jobs.filter(j => j.endAt <= now)) {
       L.jobs.splice(L.jobs.indexOf(j), 1);
@@ -348,6 +369,7 @@ function collect(uid, now = Date.now()) {
   const amount = Math.min(avail, Math.floor(room));
   S.resources[k] += amount;
   b.stored -= amount;
+  hungry = isHungry();
   save();
   return { res: k, amount, full: amount < avail };
 }
@@ -574,7 +596,7 @@ function cheat() {
   S.raid.shieldUntil = 0;
   if (!enemyView && S.view === S.homeland && S.buildings.length < 6) {          // a bare homeland gets a defended base to fight a war from
     const h = hq(), now = Date.now();
-    [['gunTurret', 4], ['missileBattery', 2], ['antiAir', 2], ['barracks', 1], ['goldMine', 1], ['oilRefinery', 1]].forEach(([type, n], ti) => {
+    [['gunTurret', 4], ['missileBattery', 2], ['antiAir', 2], ['barracks', 1], ['goldMine', 1], ['oilRefinery', 1], ['farm', 2], ['house', 3], ['village', 1]].forEach(([type, n], ti) => {
       for (let i = 0; i < n; i++) {
         const a = (ti * 2.1 + i * 2.7), r = 4 + (i % 2) * 2;
         placeStarter(type, Math.min(3, B[type].levels.length), 1, h.x + 1.5 + Math.cos(a) * r, h.y + 1.5 + Math.sin(a) * r, now);
@@ -586,7 +608,7 @@ function cheat() {
 
 
 E2.state = {
-  cheat, get, load, save, reset, create, grid, tick, viewId, owned, all, homeBuildings, switchView, enterWar, exitEnemy, warLayout, inEnemyView, raidView,
+  cheat, population, foodMade, foodEaten, taxes, popBuilders, totalBuilders, isHungry, get, load, save, reset, create, grid, tick, viewId, owned, all, homeBuildings, switchView, backdrop, enterWar, exitEnemy, warLayout, inEnemyView, raidView,
   hq, hqLevel, caps, maxLevelFor, maxCount, countOf, busy, freeBuilders, byUid,
   canAfford, missing, occupant, canPlace, placeBlock, upgradeBlock, obstacleAt, visualObstacles, jobs, startClear,
   startBuild, moveBlock, moveBuilding, startUpgrade, finishNow, collect, collectAll,

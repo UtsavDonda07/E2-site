@@ -116,6 +116,14 @@ function generate(id, conquered) {
   for (let i = 0; i < towns.length * perTown; i++) eco.push({ type: kinds[i % kinds.length], town: towns[(i + (i >= kinds.length ? 1 : 0)) % towns.length] });
   for (const e of eco) near(e.type, lvl, e.town, 1);
 
+  // Their people: houses in every town, villages in the bigger ones, and a city in the capital of a strong country.
+  towns.forEach((t, i) => {
+    near('house', lvl, t, 1); near('house', lvl, t, 1);
+    if (i > 0 && P >= 3) near('village', lvl, t, 1);
+  });
+  if (P >= 6) near('city', lvl, capital, 2);
+  near('farm', lvl, towns[towns.length - 1], 1);
+
   // Defences: a ring round the HQ, a few at every town, and coastal batteries facing the sea where you land.
   const towers = [];
   for (let i = 0; i < guns; i++) towers.push('gunTurret');
@@ -151,66 +159,128 @@ function generate(id, conquered) {
 }
 
 // ---------- The war map ----------
-// A war is fought on one map that holds both countries, side by side the way they lie on the globe (their direction from
-// each other), a couple of tiles of sea apart. Returns the combined land grid and where each country's own tiles went.
+// A war is fought on one map that holds both countries, side by side the way they lie on the globe (their direction from each
+// other). Land neighbours touch at a strip of land, the others have sea between them. Returns the combined grid:
+// side[] is 0 sea, 1 your country, 2 the enemy country, 3 a land strip between them.
 const layoutCache = {};
-function warLayout(homeId, targetId) {
-  const key = homeId + '>' + targetId;
+function warLayout(homeId, targetId) { return layoutOf(homeId, targetId); }
+function layoutOf(homeId, targetId) {
+  const key = homeId + '>' + (targetId || '');
   if (layoutCache[key]) return layoutCache[key];
-  const hc = E2.byId(homeId), tc = E2.byId(targetId), hg = E2.isoGrid(hc), tg = E2.isoGrid(tc);
-  let dlon = tc.label[0] - hc.label[0];
-  if (dlon > 180) dlon -= 360; else if (dlon < -180) dlon += 360;
-  let dx = dlon * Math.cos(hc.label[1] * Math.PI / 180), dy = -(tc.label[1] - hc.label[1]);      // north is up on screen
-  const len = Math.hypot(dx, dy);
-  if (len < 0.01) { dx = 0; dy = -1; } else { dx /= len; dy /= len; }
-
-  const tiles = g => { const l = []; for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) if (g.rows[y][x] === '1') l.push(x, y); return l; };
-  const hl = tiles(hg), tl = tiles(tg);
-  const centre = l => { let sx = 0, sy = 0; for (let i = 0; i < l.length; i += 2) { sx += (l[i] - l[i + 1]) * 32; sy += (l[i] + l[i + 1]) * 16; } return { x: sx / (l.length / 2), y: sy / (l.length / 2) }; };
-  const hcn = centre(hl), tcn = centre(tl);
+  const hc = E2.byId(homeId), tc = targetId ? E2.byId(targetId) : null;
   const K = (x, y) => (y + 4096) * 8192 + x + 4096;
-  const homeSet = new Set();
-  for (let i = 0; i < hl.length; i += 2) homeSet.add(K(hl[i], hl[i + 1]));
-  const offsetFor = t => {                                     // the target's tile shift that puts its centre t px from ours along the bearing
-    const sx = hcn.x + dx * t - tcn.x, sy = hcn.y + dy * t - tcn.y, a = sx / 32, b = sy / 16;
-    return { x: Math.round((a + b) / 2), y: Math.round((b - a) / 2) };
+  const tiles = g => { const l = []; for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) if (g.rows[y][x] === '1') l.push(x, y); return l; };
+  const centre = (l, o) => { let sx = 0, sy = 0; for (let i = 0; i < l.length; i += 2) { sx += (l[i] - l[i + 1]) * 32; sy += (l[i] + l[i + 1]) * 16; } return { x: sx / (l.length / 2) + (o.x - o.y) * 32, y: sy / (l.length / 2) + (o.x + o.y) * 16 }; };
+  const bearing = (a, b) => {                                  // direction from country a to country b on screen (north is up)
+    let dlon = b.label[0] - a.label[0];
+    if (dlon > 180) dlon -= 360; else if (dlon < -180) dlon += 360;
+    const dx = dlon * Math.cos(a.label[1] * Math.PI / 180), dy = -(b.label[1] - a.label[1]), len = Math.hypot(dx, dy);
+    return len < 0.01 ? { x: 0, y: -1 } : { x: dx / len, y: dy / len };
   };
-  const byLand = hc.land.includes(targetId);                  // land neighbours touch at the border; the others have sea between them
-  const GAP = byLand ? 1 : 4, close = o => {
-    for (let i = 0; i < tl.length; i += 2) {
-      const x = tl[i] + o.x, y = tl[i + 1] + o.y;
-      for (let ay = -GAP; ay <= GAP; ay++) for (let ax = -GAP; ax <= GAP; ax++) if (homeSet.has(K(x + ax, y + ay))) return true;
-    }
-    return false;
+  const occ = new Set();                                       // every tile used so far, in the home country's tile coordinates
+  const placed = [];                                           // { id, l (tiles), off, val }
+  const put = (id, l, off, val) => { placed.push({ id, l, off, val }); for (let i = 0; i < l.length; i += 2) occ.add(K(l[i] + off.x, l[i + 1] + off.y)); };
+  // Slides a country in from far away along `dir` until it would touch (within `gap` tiles of) what is already placed.
+  const slide = (refCentre, dir, l, g, refSize, gap) => {
+    const cn = centre(l, { x: 0, y: 0 });
+    const offsetFor = t => {
+      const sx = refCentre.x + dir.x * t - cn.x, sy = refCentre.y + dir.y * t - cn.y, a = sx / 32, b = sy / 16;
+      return { x: Math.round((a + b) / 2), y: Math.round((b - a) / 2) };
+    };
+    const close = o => {
+      for (let i = 0; i < l.length; i += 2) {
+        const x = l[i] + o.x, y = l[i + 1] + o.y;
+        for (let ay = -gap; ay <= gap; ay++) for (let ax = -gap; ax <= gap; ax++) if (occ.has(K(x + ax, y + ay))) return true;
+      }
+      return false;
+    };
+    let t = (refSize + g.w + g.h) * 16, off = offsetFor(t);
+    while (t > 0) { const next = offsetFor(t - 12); if (close(next)) break; t -= 12; off = next; }
+    return off;
   };
-  let t = (hg.w + hg.h + tg.w + tg.h) * 16, off = offsetFor(t);
-  while (t > 0) {                                              // slide the target in until the coasts are a couple of tiles apart
-    const next = offsetFor(t - 12);
-    if (close(next)) break;
-    t -= 12; off = next;
-  }
 
-  let x0 = Math.min(0, off.x), y0 = Math.min(0, off.y), x1 = Math.max(hg.w, off.x + tg.w), y1 = Math.max(hg.h, off.y + tg.h);
-  const M = 4, hs = { x: M - x0, y: M - y0 }, ts = { x: off.x + hs.x, y: off.y + hs.y };
-  const w = x1 - x0 + 2 * M, h = y1 - y0 + 2 * M, side = new Uint8Array(w * h);
-  for (let i = 0; i < hl.length; i += 2) side[(hl[i + 1] + hs.y) * w + hl[i] + hs.x] = 1;
-  for (let i = 0; i < tl.length; i += 2) side[(tl[i + 1] + ts.y) * w + tl[i] + ts.x] = 2;
-  if (byLand) {                                                // land neighbours: a strip of land joins the two countries where they come closest
+  const hg = E2.isoGrid(hc), hl = tiles(hg), byLand = !!tc && hc.land.includes(targetId);
+  const tg = tc && E2.isoGrid(tc), tl = tc ? tiles(tg) : [];
+  put(homeId, hl, { x: 0, y: 0 }, 1);
+  const toff = tc ? slide(centre(hl, { x: 0, y: 0 }), bearing(hc, tc), tl, tg, hg.w + hg.h, byLand ? 1 : 4) : { x: 0, y: 0 };
+  if (tc) put(targetId, tl, toff, 2);
+
+  // Land neighbours join the two countries with a strip of land where their coasts come closest.
+  const bridge = [];
+  if (byLand) {
+    const edge = (l, o) => { const e = []; for (let i = 0; i < l.length; i += 2) { const x = l[i] + o.x, y = l[i + 1] + o.y; if (![[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dy]) => occ.has(K(x + dx, y + dy)))) e.push(x, y); } return e; };
+    const A = edge(hl, { x: 0, y: 0 }), T = edge(tl, toff);
     let pa = null, pb = null, bd = Infinity;
-    const A = [], T = [];
-    for (let i = 0; i < w * h; i++) if (side[i] === 1) A.push(i); else if (side[i] === 2) T.push(i);
-    for (const i of A) { const ax = i % w, ay = (i / w) | 0; if (!(ax > 0 && side[i - 1] && ay > 0 && side[i - w] && side[i + 1] && side[i + w])) for (const j of T) { const d = (ax - j % w) ** 2 + (ay - ((j / w) | 0)) ** 2; if (d < bd) { bd = d; pa = i; pb = j; } } }
-    if (pa != null) {
-      const n = Math.ceil(Math.sqrt(bd)) * 2 + 1, ax = pa % w, ay = (pa / w) | 0, bx = pb % w, by = (pb / w) | 0;
+    for (let i = 0; i < A.length; i += 2) for (let j = 0; j < T.length; j += 2) { const d = (A[i] - T[j]) ** 2 + (A[i + 1] - T[j + 1]) ** 2; if (d < bd) { bd = d; pa = [A[i], A[i + 1]]; pb = [T[j], T[j + 1]]; } }
+    if (pa) {
+      const n = Math.ceil(Math.sqrt(bd)) * 2 + 1;
       for (let k = 0; k <= n; k++) for (const [ox, oy] of [[0, 0], [1, 0], [0, 1]]) {
-        const x = Math.round(ax + (bx - ax) * k / n) + ox, y = Math.round(ay + (by - ay) * k / n) + oy;
-        if (x >= 0 && y >= 0 && x < w && y < h && !side[y * w + x]) side[y * w + x] = 3;
+        const x = Math.round(pa[0] + (pb[0] - pa[0]) * k / n) + ox, y = Math.round(pa[1] + (pb[1] - pa[1]) * k / n) + oy;
+        if (!occ.has(K(x, y))) { bridge.push(x, y); occ.add(K(x, y)); }
       }
     }
   }
+
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of placed) for (let i = 0; i < p.l.length; i += 2) {
+    const x = p.l[i] + p.off.x, y = p.l[i + 1] + p.off.y;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  const M = 4, hs = { x: M - x0, y: M - y0 }, ts = { x: toff.x + hs.x, y: toff.y + hs.y };
+  const w = x1 - x0 + 1 + 2 * M, h = y1 - y0 + 1 + 2 * M, side = new Uint8Array(w * h);
+  for (const p of placed) {
+    for (let i = 0; i < p.l.length; i += 2) side[(p.l[i + 1] + p.off.y + hs.y) * w + p.l[i] + p.off.x + hs.x] = p.val;
+  }
+  for (let i = 0; i < bridge.length; i += 2) side[(bridge[i + 1] + hs.y) * w + bridge[i] + hs.x] = 3;
   const rows = [];
   for (let y = 0; y < h; y++) { let r = ''; for (let x = 0; x < w; x++) r += side[y * w + x] ? '1' : '0'; rows.push(r); }
-  return (layoutCache[key] = { w, h, rows, side, home: hs, target: ts, homeId, targetId, byLand });
+  return (layoutCache[key] = { w, h, rows, side, home: hs, target: ts, homeId, targetId, byLand, placed });
+}
+
+// The real land around a country, drawn dimly behind it: every other country's true outline is laid onto this country's grid with
+// the same scale, so the neighbours sit where they really are (no sea between India and China). Returns tile coordinates in the
+// country's own grid frame (they can be negative or past its edge): [x0, y0, x1, y1, ...].
+const aroundCache = {};
+function surroundings(id) {
+  if (aroundCache[id]) return aroundCache[id];
+  const c = E2.byId(id), g = E2.isoGrid(c), M = 55, W = g.w + 2 * M, H = g.h + 2 * M;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#000';
+  const cell = Math.max(c.grid.csx, c.grid.csy, 0.02), radius = (Math.max(g.w, g.h) / 2 + M) * cell * 1.7, cx = c.label[0], cy = c.label[1];   // degrees: skips far-off countries
+  for (const o of E2.COUNTRIES) {
+    if (o.id === id) continue;
+    for (const ring of o.outline) {
+      let lo0 = Infinity, lo1 = -Infinity, la0 = Infinity, la1 = -Infinity;
+      for (let i = 0; i < ring.length; i += 2) { lo0 = Math.min(lo0, ring[i]); lo1 = Math.max(lo1, ring[i]); la0 = Math.min(la0, ring[i + 1]); la1 = Math.max(la1, ring[i + 1]); }
+      if (la1 < cy - radius || la0 > cy + radius) continue;
+      for (const dl of [-360, 0, 360]) {
+        if (lo1 + dl < cx - radius || lo0 + dl > cx + radius) continue;
+        ctx.beginPath();
+        for (let i = 0; i < ring.length; i += 2) {
+          const p = g.project(ring[i] + dl, ring[i + 1]);
+          i ? ctx.lineTo(p.x + M + 0.5, p.y + M + 0.5) : ctx.moveTo(p.x + M + 0.5, p.y + M + 0.5);
+        }
+        ctx.closePath(); ctx.fill();
+      }
+    }
+  }
+  const px = ctx.getImageData(0, 0, W, H).data, mine = (x, y) => x >= 0 && y >= 0 && x < g.w && y < g.h && g.rows[y][x] === '1';
+  const dim = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (px[(y * W + x) * 4 + 3] > 127 && !mine(x - M, y - M)) dim[y * W + x] = 1;
+  const touches = (a, x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if ((dx || dy) && xx >= 0 && yy >= 0 && xx < W && yy < H && a(xx, yy)) return true; } return false; };
+  for (let pass = 0; pass < 2; pass++) {                       // the borders of a rough country grid leave hairline gaps: close them
+    const add = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (dim[y * W + x] || mine(x - M, y - M)) continue;
+      if (touches((a, b) => mine(a - M, b - M), x, y) && touches((a, b) => dim[b * W + a], x, y)) add.push(y * W + x);
+    }
+    for (const i of add) dim[i] = 1;
+  }
+  const out = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (dim[y * W + x]) out.push(x - M, y - M);
+  return (aroundCache[id] = out);
 }
 
 // Short summary for the world map card.
@@ -219,5 +289,5 @@ function describe(enemy) {
   return { guns: count('gunTurret'), missiles: count('missileBattery'), aa: count('antiAir'), total: enemy.buildings.length, level: enemy.level };
 }
 
-E2.enemy = { generate, describe, edgeMap, warLayout };
+E2.enemy = { generate, describe, edgeMap, warLayout, surroundings };
 })();

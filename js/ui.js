@@ -61,6 +61,7 @@ function init() {
 
   $('btnBuild').onclick = openShop;
   $('btnSettings').onclick = settings;
+  $('popPill').onclick = countryInfo;
   $('btnAttack').onclick = () => { if (!raiding()) E2.app.showWorld(); };
   $('placeCancel').onclick = () => E2.base.cancelPlacing();
   $('placeOk').onclick = () => E2.base.confirmPlacing();
@@ -77,7 +78,10 @@ function updateHud() {
     bar.querySelector('.fill').style.width = `calc(${Math.min(100, S.resources[k] / cap * 100)}% - 4px)`;
     bar.classList.toggle('full', S.resources[k] >= cap);
   }
-  $('builders').innerHTML = `${E2.icon('hammer')}<span class="t">${E2.state.freeBuilders()}/${S.builders}</span>`;
+  $('builders').innerHTML = `${E2.icon('hammer')}<span class="t">${E2.state.freeBuilders()}/${E2.state.totalBuilders()}</span>`;
+  const hungry = E2.state.isHungry(), net = E2.state.foodMade() - E2.state.foodEaten();
+  $('popPill').classList.toggle('bad', hungry);
+  $('popPill').innerHTML = `${E2.icon('people')}<span class="t">${E2.fmtNum(E2.state.population())}${hungry ? ' ⚠' : ''}</span>`;
   const now = Date.now(), left = S.raid.shieldUntil - now;
   $('shieldPill').classList.toggle('hidden', left <= 0);                     // the shield only shows while it is active
   if (left > 0) $('shieldPill').innerHTML = `${E2.icon('shield')}<span class="t">${E2.fmtTime(left / 1000)}</span>`;
@@ -95,6 +99,27 @@ function setHome() {
   $('homeName').textContent = `${c.name}${S.view === S.homeland ? '' : ' (territory)'}`;
 }
 
+// ---------- The country: people, food, taxes ----------
+function countryInfo() {
+  const St = E2.state, pop = St.population(), made = St.foodMade(), eaten = St.foodEaten(), net = made - eaten;
+  const army = E2.state.armyUsed(), builders = St.popBuilders();
+  const next = E2.POP.builderAt.find(n => pop < n);
+  const line = (a, b) => `<div class="stat"><span>${a}</span><span>${b}</span></div>`;
+  let body = line('Population', `${E2.icon('people')} ${E2.fmtNum(pop)}`)
+    + line('Food in store', `${E2.icon('food')} ${E2.fmtNum(E2.state.get().resources.food)}`)
+    + line('Farms make', `+${E2.fmtNum(made)}/h`)
+    + line('People eat', `-${E2.fmtNum(pop * E2.POP.foodPerPerson)}/h`)
+    + line('Army eats', `-${E2.fmtNum(army * E2.POP.foodPerArmySpace)}/h`)
+    + line('Food balance', `<b style="color:${net >= 0 ? '#2a8a1a' : '#c0392b'}">${net >= 0 ? '+' : ''}${E2.fmtNum(net)}/h</b>`)
+    + line('Taxes from homes', `${E2.icon('gold')} ${E2.fmtNum(St.taxes())}/h`)
+    + line('Extra builders', `${builders}${next ? ` (next at ${next} people)` : ' (max)'}`);
+  body += St.isHungry()
+    ? '<p><b style="color:#c0392b">Your people are starving!</b> Production is at half speed. Collect food from your farms or build more.</p>'
+    : net < 0 ? '<p>Your food is draining. Build or upgrade farms before the stores run out.</p>'
+    : '<p>Houses, villages and cities bring people. People pay taxes and give you builders, but they eat. Farms feed them.</p>';
+  modal({ title: '🏘️ Your country', body, buttons: [{ label: 'OK', cls: 'primary' }] });
+}
+
 // ---------- Sheet ----------
 const sheet = () => $('sheet');
 function closeSheet() {
@@ -106,9 +131,9 @@ function closeSheet() {
 const sheetOpen = () => sheetMode !== null;
 
 // ----- Shop: a framed panel with tabs and building cards -----
-const SHOP_TABS = { economy: ['goldMine', 'oilRefinery', 'steelMill', 'vault', 'harbor'], defence: ['gunTurret', 'missileBattery', 'antiAir'], military: ['barracks', 'researchLab'] };
-const TAB_NAMES = { economy: 'Economy', defence: 'Defence', military: 'Military' };
-const TAB_ICONS = { economy: 'coins', defence: 'shield', military: 'hammer' };
+const SHOP_TABS = { economy: ['goldMine', 'oilRefinery', 'steelMill', 'vault', 'harbor'], country: ['farm', 'house', 'village', 'city'], defence: ['gunTurret', 'missileBattery', 'antiAir'], military: ['barracks', 'researchLab'] };
+const TAB_NAMES = { economy: 'Economy', country: 'Country', defence: 'Defence', military: 'Military' };
+const TAB_ICONS = { economy: 'coins', country: 'home', defence: 'shield', military: 'hammer' };
 
 function openShop() {
   if (E2.base.isPlacing() || raiding()) return;
@@ -129,7 +154,7 @@ function renderShop() {
     const def = B[type], lv = def.levels[0];
     const count = E2.state.countOf(type), max = E2.state.maxCount(type);
     const afford = E2.state.canAfford(lv.cost);
-    const off = count >= max ? 'Max built' : free < 1 ? 'Builders busy' : '';
+    const needHq = def.maxCount.findIndex(n => n > 0) + 1, off = max === 0 ? `Needs HQ level ${needHq}` : count >= max ? 'Max built' : free < 1 ? 'Builders busy' : '';
     return `<div class="scard ${off ? 'off' : ''}" data-type="${type}" ${off ? '' : 'role="button"'}>
       <div class="scard-top"><b>${def.name}</b><button class="info-i" data-info="${type}" aria-label="Info">i</button></div>
       <div class="scard-thumb" data-thumb="${type}"><span class="count">${count}/${max}</span></div>
@@ -141,7 +166,7 @@ function renderShop() {
   sheet().innerHTML = `<div class="shop-panel">
     <div class="shop-art" data-thumb="hq"></div>
     <button class="shop-x" data-close aria-label="Close">✕</button>
-    <div class="shop-head"><b>Shop</b><small>Build and upgrade to grow your empire</small><span class="meta">HQ level ${E2.state.hqLevel()} · builders free ${free}/${S.builders}</span></div>
+    <div class="shop-head"><b>Shop</b><small>Build and upgrade to grow your empire</small><span class="meta">HQ level ${E2.state.hqLevel()} · builders free ${free}/${E2.state.totalBuilders()}</span></div>
     <div class="shop-tabs">${Object.keys(SHOP_TABS).map(t => `<button class="stab ${shopTab === t ? 'on' : ''}" data-tab="${t}">${E2.icon(TAB_ICONS[t])}<span>${TAB_NAMES[t]}</span></button>`).join('')}</div>
     <div class="shop-grid">${cards}</div></div>`;
   sheet().classList.remove('hidden');
@@ -161,6 +186,7 @@ function showBuildingInfo(type) {
   const def = B[type], lines = [`Build time: ${E2.fmtTime(def.levels[0].time)}`, `Levels: up to ${E2.state.maxLevelFor(type)} with your current HQ`];
   if (def.produces) lines.push(`Makes ${E2.fmtNum(E2.rateOf(type, 1))} ${E2.RES[def.produces].name.toLowerCase()} per hour at level 1`);
   if (def.tower) lines.push(`Hit points ${def.tower.hp[0]} · damage ${def.tower.dmg[0]} · range ${def.tower.range} · ${def.tower.targets === 'air' ? 'shoots air only' : 'shoots ground only'}`);
+  if (def.pop) lines.push(`Home for ${def.pop[0]} people at level 1 (they eat ${E2.fmtNum(def.pop[0] * E2.POP.foodPerPerson)} food per hour)`);
   if (type === 'vault') lines.push(`Adds ${E2.fmtNum(def.storage[0])} storage for each resource`);
   if (type === 'barracks') lines.push(`Houses ${def.capacity[0]} troops at level 1`);
   if (type === 'harbor') lines.push(`Ship carries ${def.capacity[0]} oil or steel at level 1`, 'Trips take 2 to 10 minutes');
@@ -193,6 +219,7 @@ function openInfo(uid) {
     html += `<div class="stat"><span>Production</span><span>${E2.icon(k)} ${E2.fmtNum(E2.rateOf(b.type, b.level))}/h</span></div>
              <div class="stat"><span>Stored</span><span id="liveStored"></span></div>`;
   }
+  if (def.pop && b.level >= 1) html += `<div class="stat"><span>People</span><span>${E2.icon('people')} ${E2.popOf(b.type, b.level)}</span></div>`;
   if (b.type === 'vault' && b.level >= 1) html += `<div class="stat"><span>Adds storage</span><span>+${E2.fmtNum(def.storage[b.level - 1])} each</span></div>`;
   if (b.type === 'harbor' && b.level >= 1) html += `<div class="stat"><span>Ship carries</span><span>${E2.state.harborCapacity(b)} per trip</span></div>`;
   if (b.type === 'harbor' && b.level >= 1 && !b.ruined && !building) html += harborHtml(b);

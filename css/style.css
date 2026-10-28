@@ -111,6 +111,10 @@ button { font: inherit; color: var(--text); cursor: pointer; }
 .rbar.gold .fill { background: linear-gradient(#ffe26b, #e0a21a); }
 .rbar.oil .fill { background: linear-gradient(#8a86c8, #4e4a92); }
 .rbar.steel .fill { background: linear-gradient(#e6ecf3, #94a1b1); }
+.rbar.food .fill { background: linear-gradient(#bfe36a, #5f9a1c); }
+.pill.bad { border-color: var(--bad); animation: hungerPulse 1.2s infinite alternate; }
+@keyframes hungerPulse { to { filter: brightness(1.4); } }
+#popPill { cursor: pointer; }
 .rbar .v { position: absolute; right: 22px; top: 0; bottom: 0; display: flex; align-items: center; font-size: 15px; font-weight: 900; color: #fff; text-shadow: var(--chunky); }
 .rbar .ic { position: absolute; right: -16px; top: -6px; width: 38px; height: 38px; filter: drop-shadow(0 2px 2px rgba(0,0,0,.6)); }
 .rbar.full { border-color: var(--bad); }

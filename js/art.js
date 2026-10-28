@@ -70,7 +70,7 @@ function smoke(ctx, x, y, t, n = 3) {
 
 // ---------- Building painters (footprint coordinates 0..s) ----------
 const PAINT = {};
-const H = { hq: 70, goldMine: 34, oilRefinery: 44, steelMill: 56, vault: 48, gunTurret: 22, missileBattery: 36, antiAir: 46, barracks: 40, researchLab: 56 };
+const H = { hq: 70, goldMine: 34, oilRefinery: 44, steelMill: 56, vault: 48, gunTurret: 22, missileBattery: 36, antiAir: 46, barracks: 40, researchLab: 56, farm: 40, house: 40, village: 50, city: 80 };
 
 PAINT.hq = (ctx, P, s, L, t) => {
   slab(ctx, P, s, '#8a8f96', '#686d74');
@@ -201,6 +201,13 @@ PAINT.harbor = (ctx, P, s, L, t) => {
   box(ctx, P, 1.0, 0.9, 1.65, 1.5, 18, 6, { top: '#4f86d9', left: '#3f70bd', right: '#335b99' });
 };
 H.harbor = 42;
+// The country buildings are drawn from pictures (art/manifest.js); this block shows until they have loaded.
+for (const [type, wall, roof] of [['farm', '#8b623a', '#6a8a2f'], ['house', '#b04a3a', '#e0604a'], ['village', '#c07a4a', '#e0604a'], ['city', '#a8adb8', '#6c7280']]) {
+  PAINT[type] = (ctx, P, s) => {
+    slab(ctx, P, s, '#8a8070', '#645c4f');
+    box(ctx, P, 0.2, 0.2, s - 0.2, s - 0.2, H[type] * 0.7, 4, { top: roof, left: wall, right: wall });
+  };
+}
 
 // ---------- Trade ships (Kenney "Watercraft Kit", CC0), rendered by tools/render-models.html ----------
 const SHIP_AY = { 'ship-small': 0.6937, 'ship-cargo': 0.6197, 'ship-liner': 0.6454 };   // where the waterline centre sits in each picture

@@ -305,7 +305,7 @@ function makeWarSim(buildings, lay, enemy, army) {
 
 // Do the two countries touch by land? If not, ground troops sail from the coast tile of one nearest to the other.
 function seaRoute(lay) {
-  const { w, h, side } = lay, at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h) ? 0 : side[y * w + x];
+  const { w, h, side } = lay, at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h || side[y * w + x] > 3) ? 0 : side[y * w + x];     // dim neighbour land is scenery
   const coast = [[], [], []];
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const v = at(x, y);
@@ -323,7 +323,7 @@ function seaRoute(lay) {
     const x = q[k] % w, y = (q[k] / w) | 0;
     for (const [dx, dy] of DIRS8) {
       const a = x + dx, b = y + dy;
-      if (a < 0 || b < 0 || a >= w || b >= h || seen[b * w + a] || !side[b * w + a]) continue;
+      if (a < 0 || b < 0 || a >= w || b >= h || seen[b * w + a] || !at(a, b)) continue;
       if (side[b * w + a] === 2) { connected = true; break; }
       seen[b * w + a] = 1; q.push(b * w + a);
     }
@@ -344,7 +344,7 @@ function fieldFor(sim, key, goals) {
     const x = q[k], y = q[k + 1], d = f[y * w + x];
     for (const [dx, dy] of DIRS8) {
       const a = x + dx, b = y + dy;
-      if (a < 0 || b < 0 || a >= w || b >= h || f[b * w + a] >= 0 || !side[b * w + a]) continue;
+      if (a < 0 || b < 0 || a >= w || b >= h || f[b * w + a] >= 0 || !side[b * w + a] || side[b * w + a] > 3) continue;
       f[b * w + a] = d + 1; q.push(a, b);
     }
   }

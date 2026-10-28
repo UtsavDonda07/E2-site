@@ -77,7 +77,20 @@ E2.isoGrid = c => {
     const sx = X * CW - W / 2, sy = Y * CH + N * 16 - Hh / 2;
     return { x: Math.round(((sx / 32 + (sy - 16) / 16) / 2) - x0), y: Math.round((((sy - 16) / 16 - sx / 32) / 2) - y0) };
   };
-  return (isoCache[c.id] = { w, h, rows: rows.map(r => r.join('')), land: land.length / 2, tileOf });
+  // Where a real longitude and latitude falls on this grid, as a tile coordinate with fractions (a tile's middle is a whole number).
+  let lo0 = Infinity, lo1 = -Infinity, la0 = Infinity, la1 = -Infinity;       // tiny countries store a cell size of 0: take it from the outline instead
+  for (const ring of c.outline) for (let i = 0; i < ring.length; i += 2) {
+    const lo = ring[i] < 0 && g.ox > 100 ? ring[i] + 360 : ring[i];
+    lo0 = Math.min(lo0, lo); lo1 = Math.max(lo1, lo); la0 = Math.min(la0, ring[i + 1]); la1 = Math.max(la1, ring[i + 1]);
+  }
+  const csx = g.csx > 0.005 ? g.csx : (lo1 - lo0) / g.w || 0.002, csy = g.csy > 0.005 ? g.csy : (la1 - la0) / g.h || 0.002;     // a micro state with a one-point outline: about 200 m a tile
+  const project = (lon, lat) => {
+    if (lon < 0 && g.ox > 100) lon += 360;                  // countries that cross the date line were shifted east
+    const X = (lon - g.ox) / csx, Y = (g.oy - lat) / csy;
+    const sx = X * CW - W / 2, sy = Y * CH + N * 16 - Hh / 2;
+    return { x: (sx / 32 + (sy - 16) / 16) / 2 - x0, y: ((sy - 16) / 16 - sx / 32) / 2 - y0 };
+  };
+  return (isoCache[c.id] = { w, h, rows: rows.map(r => r.join('')), land: land.length / 2, tileOf, project });
 };
 
 // The capital city's tile on the country's land grid (the HQ starts there), or null if the country has no capital on file.
@@ -126,10 +139,20 @@ E2.RES = {
   gold:  { name: 'Gold',  icon: '🪙' },
   oil:   { name: 'Oil',   icon: '🛢️' },
   steel: { name: 'Steel', icon: '⚙️' },
+  food:  { name: 'Food',  icon: '🌾' },
 };
 E2.RES_KEYS = Object.keys(E2.RES);
-E2.START_RES = { gold: 1500, oil: 600, steel: 300 };
+E2.START_RES = { gold: 1500, oil: 600, steel: 300, food: 300 };
 E2.BUILDERS = 2;
+
+// People and food. Houses, villages and cities hold the population; the people and the army eat food every hour (farms make it).
+// With no food in store the country starves: everything except farms produces at half speed.
+E2.POP = {
+  foodPerPerson: 5, foodPerArmySpace: 12,    // food eaten per hour
+  starveFactor: 0.5,
+  builderAt: [60, 220],                      // this much population brings one more builder each
+  maxOfflineHours: 2,                        // while you are away the people eat at most this many hours' worth
+};
 
 // Indexed by HQ level - 1.
 E2.HQ = {
@@ -273,7 +296,65 @@ E2.BUILDINGS.harbor = {
     { cost: { gold: 3000, steel: 700 }, time: 30 * M },
   ],
 };
-E2.BUILD_ORDER = ['goldMine', 'oilRefinery', 'steelMill', 'vault', 'harbor', 'gunTurret', 'missileBattery', 'antiAir', 'barracks', 'researchLab'];
+// ----- The country: farms feed the people, houses, villages and cities hold them and pay taxes (gold) -----
+E2.BUILDINGS.farm = {
+  name: 'Farm', icon: '🌾', color: '#6a8a2f', size: 2, produces: 'food', holdHours: 2.5,
+  desc: 'Grows food for your people and your army. Tap the bubble to collect it. Without food the country starves and production halves.',
+  maxCount: [2, 3, 5],
+  rate: [200, 320, 480, 700, 1000],
+  levels: [
+    { cost: { gold: 120 }, time: 20 },
+    { cost: { gold: 350 }, time: 2 * M },
+    { cost: { gold: 900 }, time: 12 * M },
+    { cost: { gold: 2400, steel: 150 }, time: 90 * M },
+    { cost: { gold: 5500, steel: 400 }, time: 4 * H },
+  ],
+};
+E2.BUILDINGS.house = {
+  name: 'House', icon: '🏠', color: '#b04a3a', size: 1, produces: 'gold', holdHours: 2.5,
+  desc: 'A family home. Its people pay taxes in gold and eat food. More people bring more builders.',
+  maxCount: [4, 6, 8],
+  pop: [6, 9, 13, 18, 24],
+  rate: [36, 54, 78, 108, 144],
+  levels: [
+    { cost: { gold: 60 }, time: 15 },
+    { cost: { gold: 150 }, time: 90 },
+    { cost: { gold: 400 }, time: 8 * M },
+    { cost: { gold: 1000 }, time: 50 * M },
+    { cost: { gold: 2400 }, time: 3 * H },
+  ],
+};
+E2.BUILDINGS.village = {
+  name: 'Village', icon: '🏘️', color: '#c07a4a', size: 2, produces: 'gold', holdHours: 2.5,
+  desc: 'A village of farmers and craftsmen. Many people: good taxes, a lot of mouths to feed.',
+  maxCount: [1, 2, 4],
+  pop: [25, 38, 55, 75, 100],
+  rate: [150, 228, 330, 450, 600],
+  levels: [
+    { cost: { gold: 300, steel: 30 }, time: 45 },
+    { cost: { gold: 800, steel: 80 }, time: 4 * M },
+    { cost: { gold: 2000, steel: 200 }, time: 20 * M },
+    { cost: { gold: 4500, steel: 500 }, time: 2 * H },
+    { cost: { gold: 9000, steel: 1000 }, time: 5 * H },
+  ],
+};
+E2.BUILDINGS.city = {
+  name: 'City', icon: '🏙️', color: '#8a8f9a', size: 3, produces: 'gold', holdHours: 2.5,
+  desc: 'A big city: lots of workers, the best taxes and more builders. It needs a lot of food. Needs HQ level 2.',
+  maxCount: [0, 1, 2],
+  pop: [90, 135, 200, 280, 380],
+  rate: [540, 810, 1200, 1680, 2280],
+  levels: [
+    { cost: { gold: 1500, steel: 200, oil: 100 }, time: 2 * M },
+    { cost: { gold: 3500, steel: 450, oil: 250 }, time: 8 * M },
+    { cost: { gold: 8000, steel: 1000, oil: 600 }, time: 40 * M },
+    { cost: { gold: 16000, steel: 2200, oil: 1200 }, time: 3 * H },
+    { cost: { gold: 30000, steel: 4500, oil: 2400 }, time: 6 * H },
+  ],
+};
+E2.BUILD_ORDER = ['goldMine', 'oilRefinery', 'steelMill', 'vault', 'harbor', 'farm', 'house', 'village', 'city', 'gunTurret', 'missileBattery', 'antiAir', 'barracks', 'researchLab'];
+// The people living in a building (0 for everything that is not housing).
+E2.popOf = (type, level) => (E2.BUILDINGS[type].pop || [])[level - 1] || 0;
 
 // ----- Pacing: there is no server, so nobody should have to wait long -----
 // Every build, upgrade and research timer is squeezed so the longest is MAX_WAIT (15 minutes).
@@ -291,12 +372,12 @@ for (const def of Object.values(E2.BUILDINGS)) {
 
 // Army units you train and send out. space = barracks room, lab = Research Lab level needed.
 E2.ARMY = {
-  infantry: { name: 'Infantry', icon: '🪖', space: 1, lab: 0, cost: { gold: 30 } },
-  tank:     { name: 'Tank',     icon: '🛡️', space: 4, lab: 1, cost: { gold: 150, oil: 20, steel: 30 } },
-  jet:      { name: 'Jet',      icon: '✈️', space: 6, lab: 2, cost: { gold: 300, oil: 60, steel: 80 } },
-  missile:  { name: 'Missile',  icon: '🚀', space: 3, lab: 3, cost: { gold: 200, oil: 100, steel: 100 } },
-  drone:    { name: 'Drone',    icon: '🛸', space: 2, lab: 2, cost: { gold: 120, oil: 30, steel: 30 } },
-  satellite: { name: 'Satellite', icon: '🛰️', space: 8, lab: 3, cost: { gold: 500, oil: 150, steel: 250 } },
+  infantry: { name: 'Infantry', icon: '🪖', space: 1, lab: 0, cost: { gold: 30, food: 10 } },
+  tank:     { name: 'Tank',     icon: '🛡️', space: 4, lab: 1, cost: { gold: 150, oil: 20, steel: 30, food: 25 } },
+  jet:      { name: 'Jet',      icon: '✈️', space: 6, lab: 2, cost: { gold: 300, oil: 60, steel: 80, food: 40 } },
+  missile:  { name: 'Missile',  icon: '🚀', space: 3, lab: 3, cost: { gold: 200, oil: 100, steel: 100, food: 30 } },
+  drone:    { name: 'Drone',    icon: '🛸', space: 2, lab: 2, cost: { gold: 120, oil: 30, steel: 30, food: 20 } },
+  satellite: { name: 'Satellite', icon: '🛰️', space: 8, lab: 3, cost: { gold: 500, oil: 150, steel: 250, food: 60 } },
 };
 E2.ARMY_KEYS = Object.keys(E2.ARMY);
 
@@ -307,7 +388,7 @@ E2.UNIT_IMG_ENEMY = { jet: 'art/space/jet.png', drone: 'art/space/drone.png', mi
 E2.armyIcon = k => E2.UNIT_IMG[k] ? `<img class="uimg" alt="" draggable="false" src="${E2.UNIT_IMG[k]}">` : E2.ARMY[k].icon;
 
 // Hit points of a building at a level (towers carry their own table).
-const BASE_HP = { goldMine: 220, oilRefinery: 220, steelMill: 260, vault: 300, barracks: 260, researchLab: 240, harbor: 240 };
+const BASE_HP = { goldMine: 220, oilRefinery: 220, steelMill: 260, vault: 300, barracks: 260, researchLab: 240, harbor: 240, farm: 200, house: 120, village: 200, city: 340 };
 E2.hpOf = (type, level) => {
   const def = E2.BUILDINGS[type];
   if (def.tower) return def.tower.hp[level - 1];
@@ -371,6 +452,9 @@ E2.ICON_SVG = {
   gear: svg(grad('r', '#f4f6f8', '#b7c0cb', '#656e7a') + '<path d="M24 4l4 5 6-2 2 6 6 2-2 6 5 4-5 4 2 6-6 2-2 6-6-2-4 5-4-5-6 2-2-6-6-2 2-6-5-4 5-4-2-6 6-2 2-6 6 2z" fill="url(#r)" stroke="#2b3038" stroke-width="2.5" stroke-linejoin="round"/><circle cx="24" cy="24" r="7" fill="#3c424d" stroke="#1d2026" stroke-width="2.5"/>'),
   map: svg('<path d="M5 12l12-4 14 4 12-4v28l-12 4-14-4-12 4z" fill="#f2e3b8" stroke="#6a5326" stroke-width="3" stroke-linejoin="round"/><path d="M17 8v28M31 12v28" stroke="#c9b27a" stroke-width="2"/><path d="M33 8a6 6 0 0 1 6 6c0 5-6 11-6 11s-6-6-6-11a6 6 0 0 1 6-6z" fill="#e5382d" stroke="#6b130d" stroke-width="2.5"/><circle cx="33" cy="14" r="2.2" fill="#fff"/>'),
   coins: svg(grad('c', '#fff3a0', '#f5c428', '#b9780f') + '<ellipse cx="18" cy="35" rx="13" ry="6" fill="url(#c)" stroke="#6e4106" stroke-width="2.5"/><path d="M5 35v-6a13 6 0 0 0 26 0v6" fill="#e0a21a" stroke="#6e4106" stroke-width="2.5"/><ellipse cx="18" cy="27" rx="13" ry="6" fill="url(#c)" stroke="#6e4106" stroke-width="2.5"/><ellipse cx="32" cy="17" rx="11" ry="5" fill="url(#c)" stroke="#6e4106" stroke-width="2.5"/><path d="M21 17v6a11 5 0 0 0 22 0v-6" fill="#e0a21a" stroke="#6e4106" stroke-width="2.5"/><ellipse cx="32" cy="14" rx="11" ry="5" fill="url(#c)" stroke="#6e4106" stroke-width="2.5"/>'),
+  food: svg(grad('f', '#fff3b0', '#f0c33c', '#b9820f') + '<path d="M24 44V14" stroke="#6b4a10" stroke-width="3.5" stroke-linecap="round"/><g fill="url(#f)" stroke="#6b4a10" stroke-width="2.5" stroke-linejoin="round"><ellipse cx="24" cy="9" rx="4" ry="6.5"/><ellipse cx="16" cy="17" rx="4" ry="6.5" transform="rotate(-35 16 17)"/><ellipse cx="32" cy="17" rx="4" ry="6.5" transform="rotate(35 32 17)"/><ellipse cx="16" cy="28" rx="4" ry="6.5" transform="rotate(-35 16 28)"/><ellipse cx="32" cy="28" rx="4" ry="6.5" transform="rotate(35 32 28)"/></g>'),
+  home: svg(grad('m', '#ffb0a0', '#e0604a', '#8a2a1a') + '<path d="M24 5L4 23h6v19h28V23h6z" fill="url(#m)" stroke="#4a140c" stroke-width="3" stroke-linejoin="round"/><rect x="20" y="28" width="9" height="14" rx="1.5" fill="#f4e2b0" stroke="#4a140c" stroke-width="2.5"/>'),
+  people: svg(grad('p', '#ffe6c8', '#e0a878', '#8a5a30') + '<circle cx="17" cy="15" r="7" fill="url(#p)" stroke="#4a2a10" stroke-width="2.5"/><path d="M4 41c0-9 6-14 13-14s13 5 13 14z" fill="#4aa3ff" stroke="#10315a" stroke-width="2.5" stroke-linejoin="round"/><circle cx="33" cy="17" r="6" fill="url(#p)" stroke="#4a2a10" stroke-width="2.5"/><path d="M27 29c8-3 17 1 17 12H31" fill="#e2553f" stroke="#5a1a10" stroke-width="2.5" stroke-linejoin="round"/>'),
   star: svg(grad('x', '#fff3a0', '#f5c428', '#b9780f') + '<path d="M24 4l6 13 14 2-10 10 3 14-13-7-13 7 3-14L4 19l14-2z" fill="url(#x)" stroke="#6e4106" stroke-width="3" stroke-linejoin="round"/>'),
 };
 E2.iconUrl = key => 'data:image/svg+xml;utf8,' + encodeURIComponent(E2.ICON_SVG[key]);

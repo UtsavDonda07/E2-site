@@ -10,4 +10,9 @@ window.E2_SPRITES = {
   barracks:    { src: 'art/rendered/barracks.png',    ax: 0.5, ay: 0.676,  scale: 0.5, h: 62 },
   researchLab: { src: 'art/rendered/researchLab.png', ax: 0.5, ay: 0.7106, scale: 0.5, h: 78 },
   harbor:      { src: 'art/rendered/harbor.png',      ax: 0.5, ay: 0.6024, scale: 0.5, h: 42 },
+  // The country, composed from Kenney's CC0 "Isometric Buildings" tiles with tools/make_town_sprites.py.
+  house:   { src: 'art/town/house.png',   ax: 0.5, ay: 0.7253, scale: 0.64, h: 58 },
+  village: { src: 'art/town/village.png', ax: 0.5, ay: 0.5935, scale: 0.64, h: 79 },
+  city:    { src: 'art/town/city.png',    ax: 0.5, ay: 0.6231, scale: 0.64, h: 127 },
+  farm:    { src: 'art/town/farm.png',    ax: 0.5, ay: 0.5197, scale: 0.64, h: 81 },
 };
