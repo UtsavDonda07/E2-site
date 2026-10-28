@@ -1,5 +1,5 @@
 {
-    "version":  20261028102503,
+    "version":  20261028104336,
     "files":  {
                   "art/advisor.webp":  "4d20e5aab36f3f65366b09ed248550af5f0bdfd2eca2e06eb552ce4b38b9ff7e",
                   "art/LICENSE-Kenney-CC0.txt":  "f5f520f81277128fb422aebe334d2f08e6d8e5f7face6008885d8ff920253724",
@@ -32,7 +32,7 @@
                   "art/towers/t74.png":  "e9c5a20235cebb5fd7ad71f7710d239678c77f2d4075d6fabc4a6fb181400184",
                   "art/towers/t94.png":  "4fee69614b10deca5a190416cbd229809ac9175ecd26bfd19efb713efbc2a76c",
                   "art/towers/t99.png":  "0c8e13d6ef18dc79af2efb7356003ecf0ea18d67ceec99e5f8233f2502b097e9",
-                  "css/style.css":  "e6308e766232ae94ea2f68c5734af35ca148508a2063c0b4a45f4e58fdf0cbff",
+                  "css/style.css":  "c8f4438a10ff8d865aa2bf1ae820a44fb15d96be0445efa86e3a28da28660d5a",
                   "data/countries.js":  "fcd34b6295d62c60e2d59a1d2383d08e1f64213974683e3bce6ae7106f0799fa",
                   "index.html":  "36ab032c3a383c4eda010d1e8ab783fb1ffc269e8a968e2d38d467093f63afba",
                   "js/art.js":  "36711b41e85c2c95eb07f40329d64054c50ce6708baa0c240192eab5c25e9b48",
@@ -47,7 +47,7 @@
                   "js/sfx.js":  "c1a4958ff63cf7fe9bc8ab207af3c73f96786e40a0af5dba22c5312be120f73a",
                   "js/state.js":  "4b72cc4d0633acfbb839f82dea16f8f538a3151d6d836e8a66266cb252afb3e1",
                   "js/tutorial.js":  "e4177f200819d60f41d290fa428143010f691c06837fecca9a9d1bd36705b1f7",
-                  "js/ui.js":  "62c3ae0d84ef757d27635f1ec4c228fb78660c90c8c809a1649866918b9b60e1",
+                  "js/ui.js":  "dca7a3cc41b3e117a0493c9a6ae935986b2b98ac4527dcf29549de915b4bb1ef",
                   "js/worldmap.js":  "22a63a3595f729f6e4b4c8e36f4c4dd0cd34854137968a6830857c4a5b69dd87"
               }
 }

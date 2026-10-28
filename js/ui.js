@@ -19,8 +19,10 @@ function toast(msg) {
   setTimeout(() => el.remove(), 2700);
 }
 
-function modal({ title, body, buttons }) {
+// x: true adds a red close icon on the top right corner (use it for dialogs that only need "close").
+function modal({ title, body, buttons, x }) {
   $('modalBox').innerHTML = `<h3>${title}</h3><div class="body">${body}</div><div class="row"></div>`;
+  if (x) addModalX();
   const row = $('modalBox').querySelector('.row');
   for (const b of buttons) {
     const btn = document.createElement('button');
@@ -30,6 +32,12 @@ function modal({ title, body, buttons }) {
     row.appendChild(btn);
   }
   $('modal').classList.remove('hidden');
+}
+function addModalX() {
+  const b = document.createElement('button');
+  b.className = 'modal-x'; b.setAttribute('aria-label', 'Close'); b.textContent = '✕';
+  b.onclick = closeModal;
+  $('modalBox').appendChild(b);
 }
 function closeModal() { $('modal').classList.add('hidden'); }
 const modalOpen = () => !$('modal').classList.contains('hidden');
@@ -437,7 +445,7 @@ function showLog() {
     const what = r.kind === 'attack' ? (r.win ? '⚔ You won' : '⚔ You lost') : (r.win ? '🛡 Repelled' : '💥 Raided');
     return `<div class="stat"><span>${c.name}</span><span>${what} · ${ago} ago</span></div>`;
   }).join('');
-  modal({ title: 'Battle log', body: rows || 'No battles yet. Build some towers!', buttons: [{ label: 'Close', cls: 'primary' }] });
+  modal({ title: 'Battle log', body: rows || 'No battles yet. Build some towers!', buttons: [], x: true });
 }
 
 // Your homeland and every conquered country, each with its own land to build on.
@@ -453,9 +461,7 @@ function showTerritories() {
     b.onclick = () => { closeModal(); E2.app.goView(id); };
     body.appendChild(b);
   }
-  const close = document.createElement('button');
-  close.className = 'btn primary'; close.textContent = 'Close'; close.onclick = closeModal;
-  $('modalBox').querySelector('.row').appendChild(close);
+  addModalX();
   $('modal').classList.remove('hidden');
 }
 
@@ -468,7 +474,6 @@ function settings() {
   if (S.colonies.length) buttons.unshift({ label: '🏴 Territories', onClick: showTerritories });
   if (E2.DEBUG) buttons.push({ label: '⚔ Test raid (debug)', onClick: () => E2.raidview.debugTrigger() });
   buttons.push(
-    { label: 'Close', cls: 'primary' },
     { label: 'Erase save', cls: 'danger', onClick: () => modal({
       title: 'Erase everything?', body: 'This cannot be undone.',
       buttons: [{ label: 'Cancel' }, { label: 'Erase', cls: 'danger', onClick: () => { E2.state.reset(); location.reload(); } }],
@@ -477,7 +482,7 @@ function settings() {
   modal({
     title: 'Settings',
     body: `Homeland: <b>${c.name}</b> (permanent)<br>Conquered: <b>${S.colonies.length}</b> · Rank: <b>${E2.rankOf(S.colonies.length)}</b>`,
-    buttons,
+    buttons, x: true,
   });
 }
 
