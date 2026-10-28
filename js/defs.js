@@ -97,7 +97,10 @@ E2.capitalSpot = c => {
   return best ? E2.isoGrid(c).tileOf(best.x + 0.5, best.y + 0.5) : null;
 };
 
-E2.DEBUG = /[?&]debug=1/.test(location.search);       // debug tools only with ?debug=1 (the app serves from localhost, so no host check)
+// Test tools (Settings > Free everything, Test raid). On while the game is being tested in the app: set TEST_BUILD to false before a store release.
+// Without it they only appear with ?debug=1 in the address.
+E2.TEST_BUILD = true;
+E2.DEBUG = E2.TEST_BUILD || /[?&]debug=1/.test(location.search);
 
 // Countries you can attack from the ones you own: neighbours by land or a short sea hop.
 // A country with no playable neighbour (an island nation) can reach the four nearest instead.

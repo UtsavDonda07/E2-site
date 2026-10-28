@@ -1,5 +1,5 @@
 {
-    "version":  20261028152307,
+    "version":  20261028152506,
     "files":  {
                   "art/advisor.webp":  "4d20e5aab36f3f65366b09ed248550af5f0bdfd2eca2e06eb552ce4b38b9ff7e",
                   "art/LICENSE-Kenney-CC0.txt":  "f5f520f81277128fb422aebe334d2f08e6d8e5f7face6008885d8ff920253724",
@@ -38,7 +38,7 @@
                   "js/art.js":  "36711b41e85c2c95eb07f40329d64054c50ce6708baa0c240192eab5c25e9b48",
                   "js/base.js":  "096e4fd37219bb851fd58e79b8fc13f0649fa686c9f7e6d69d8e96e64ae13c2c",
                   "js/bridge.js":  "a4b6e8b3369508fef6487d9afed88ef4c5af9d4b370f58fc2556cfe942e1237f",
-                  "js/defs.js":  "a4f62720c95649d321ffabf01e919b41257f3bea8143fee6b22371d2c00e039c",
+                  "js/defs.js":  "20edac80726405fd1f823233a97eb87a293e6dd4372841ddd2f4722be169781f",
                   "js/enemy.js":  "c9bf73aba7a08922e78806659d739a7c9a5949723ede86b9aa5fa3812afe106f",
                   "js/loading.js":  "061c4fa4f3c6d7805b044588de204ab30822287957312b4bb97cdae1997f6da6",
                   "js/main.js":  "343b9c9a53432bb497e31be0fbc888494856223b579a5612f11560bb9a5829fa",
@@ -46,7 +46,7 @@
                   "js/raidview.js":  "b128d927e84b4eb235462830cc9a02449f95d9c61692dd9adff3ad59c7f8454d",
                   "js/select.js":  "f68b0e10072a9ae2b5668e4aca566f04e8c75b60e27de29eb1274da63824fd69",
                   "js/sfx.js":  "c1a4958ff63cf7fe9bc8ab207af3c73f96786e40a0af5dba22c5312be120f73a",
-                  "js/state.js":  "65dca28e39f98cf3034bcd23ae3752cdc6baadada809cfed65750a7602a611c6",
+                  "js/state.js":  "69ad4f576221ed86bc02b0210e63ac5af41a73106aa11130dcbb0c917dd77602",
                   "js/tutorial.js":  "e4177f200819d60f41d290fa428143010f691c06837fecca9a9d1bd36705b1f7",
                   "js/ui.js":  "6800a6ed2b98eea38efbb847887aba026b0472f8c1132f57cd0bff59ace866b7",
                   "js/worldmap.js":  "da7ca5b3c21a6be98c05015a9ee5d6e33946d97df1f56a1aaf73eb2f6eeec9f7"

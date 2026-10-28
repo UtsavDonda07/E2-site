@@ -569,7 +569,9 @@ function applyWar(enemy, fromId, outcome, now = Date.now()) {
 function cheat() {
   if (!E2.DEBUG || !S) return;
   for (const k of E2.RES_KEYS) S.resources[k] = Math.max(S.resources[k], 999999);
-  for (const k of E2.ARMY_KEYS) S.army[k] = Math.max(S.army[k] || 0, 25);
+  for (const k of E2.ARMY_KEYS) S.army[k] = Math.max(S.army[k] || 0, 200);
+  for (const l of Object.values(S.land)) for (const b of l.buildings) b.ruined = false;          // everything repaired
+  S.raid.shieldUntil = 0;
   if (!enemyView && S.view === S.homeland && S.buildings.length < 6) {          // a bare homeland gets a defended base to fight a war from
     const h = hq(), now = Date.now();
     [['gunTurret', 4], ['missileBattery', 2], ['antiAir', 2], ['barracks', 1], ['goldMine', 1], ['oilRefinery', 1]].forEach(([type, n], ti) => {
