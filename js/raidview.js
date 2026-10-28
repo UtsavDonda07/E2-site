@@ -24,6 +24,8 @@ const sideName = s => ({ N: 'northern', S: 'southern', E: 'eastern', W: 'western
 function bannerText(now) {
   const S = E2.state.get();
   if (!S || live) return null;
+  const ss = strikeState(now);
+  if (ss) return { strike: true, cls: '', text: ss.ready ? `🚀 Troops reached ${countryName(ss.st.target)}: open the World map` : `🚀 Troops reach ${countryName(ss.st.target)} in ${E2.fmtTime(ss.nextLeft)}` };
   const R = S.raid;
   if (R.pending && now < R.nextAt && R.nextAt - now <= 15 * 60 * 1000) {
     const s = Math.ceil((R.nextAt - now) / 1000);
@@ -76,7 +78,7 @@ function begin(kind, sim, extra, title) {
   $('raidTitle').textContent = title;
   $('tray').classList.toggle('hidden', kind !== 'attack');
   $('btnSkip').textContent = kind === 'attack' ? 'End' : 'Skip';
-  if (kind === 'attack') { live.sel = E2.ARMY_KEYS.find(k => sim.reserve[k] > 0); buildTray(); }
+  if (kind === 'attack') { live.sel = E2.ARMY_KEYS.find(k => sim.reserve[k] > 0); sim.expecting = (live.arrivals || []).length; buildTray(); }
   E2.base.setRaid(sim);
   syncBar();
   requestAnimationFrame(loop);
@@ -87,6 +89,7 @@ function loop(ts) {
   const { sim } = live;
   const dt = Math.min(0.1, (ts - live.last) / 1000);
   live.last = ts;
+  if (live.arrivals && live.arrivals.length) landArrivals();
   if (!sim.done) {
     const t0 = sim.t;
     live.acc += dt * live.speed;
@@ -102,7 +105,7 @@ function buildTray() {
   const { sim } = live, t = $('tray');
   t.innerHTML = '';
   for (const k of E2.ARMY_KEYS) {
-    if (!(sim.deployed[k] || 0) && !(sim.reserve[k] > 0)) continue;
+    if (!(sim.deployed[k] || 0) && !(sim.reserve[k] > 0) && !(live.arrivals || []).some(a => a.k === k)) continue;
     const b = document.createElement('button');
     b.className = 'tray-btn'; b.dataset.k = k;
     b.innerHTML = `<span>${E2.armyIcon(k)}</span><span class="n"></span>`;
@@ -117,10 +120,11 @@ function syncBar() {
   const alive = sim.units.filter(u => u.alive).length;
   if (atk) {
     const reserve = Object.values(sim.reserve).reduce((x, y) => x + y, 0);
-    $('raidStatus').textContent = `${reserve} in reserve · ${alive} fighting · ${E2.fmtTime(E2.RAID.maxTime - sim.t)}`;
+    const inbound = (live.arrivals || []).length, now = Date.now();
+    $('raidStatus').textContent = `${reserve} in reserve · ${alive} fighting · ${inbound ? `${inbound} inbound · ` : ''}${E2.fmtTime(Math.max(0, sim.limit - sim.t))}`;
     $('tray').querySelectorAll('.tray-btn').forEach(b => {
-      const k = b.dataset.k;
-      b.querySelector('.n').textContent = sim.reserve[k] || 0;
+      const k = b.dataset.k, coming = (live.arrivals || []).find(a => a.k === k);
+      b.querySelector('.n').textContent = !(sim.reserve[k] > 0) && coming ? `⏱${E2.fmtTime(Math.max(0, (coming.at - now) / 1000))}` : (sim.reserve[k] || 0);
       b.disabled = !(sim.reserve[k] > 0);
       b.classList.toggle('on', live.sel === k && !live.armed && sim.reserve[k] > 0);
     });
@@ -128,7 +132,7 @@ function syncBar() {
   } else {
     $('raidStatus').textContent = `${sim.pending.length + alive} raiders · ${E2.fmtTime(E2.RAID.maxTime - sim.t)}`;
   }
-  $('raidProg').style.width = Math.min(100, sim.t / E2.RAID.maxTime * 100) + '%';
+  $('raidProg').style.width = Math.min(100, sim.t / (sim.limit || E2.RAID.maxTime) * 100) + '%';
   const b = $('btnStrike'), noun = atk ? '💣 Bomb' : '✈ Airstrike';
   b.disabled = sim.done || a.charges <= 0 || a.cd > 0;
   b.classList.toggle('armed', live.armed && !b.disabled);
@@ -151,7 +155,7 @@ function mapTap(cx, cy) {
 function skip() {
   if (!live) return;
   const { sim } = live;
-  if (live.kind === 'attack') for (const k of Object.keys(sim.reserve)) sim.reserve[k] = 0;   // keep the rest at home
+  if (live.kind === 'attack') { for (const k of Object.keys(sim.reserve)) sim.reserve[k] = 0; live.arrivals = []; sim.expecting = 0; }   // keep the rest at home
   let n = 0;
   while (!sim.done && n++ < 5000) E2.raid.step(sim);
   live.endAt = performance.now();
@@ -205,16 +209,97 @@ function showDefenceReport(report, raid, away) {
 }
 
 // ---------- Attacking ----------
-function startAttack(targetId) {
+// 1. launch(): the force leaves your nearest territory and travels (see the World map). 2. arrival: the first units to land open the
+// live battle. 3. startAttack(): the rest of the force joins the battle as it arrives.
+let notifiedFor = 0;            // startAt of the strike whose arrival prompt was already shown
+
+function strikeState(now) {
+  const st = E2.state.strike();
+  if (!st) return null;
+  const groups = Object.entries(st.groups).map(([k, g]) => ({ k, n: g.n, at: g.arriveAt, left: Math.max(0, (g.arriveAt - now) / 1000) }));
+  const arrived = groups.filter(g => g.left <= 0), next = Math.min(...groups.map(g => g.at));
+  return { st, groups, arrived, ready: arrived.length > 0, allIn: arrived.length === groups.length, nextLeft: Math.max(0, (next - now) / 1000) };
+}
+
+function launch(targetId) {
+  if (E2.state.strike()) { E2.ui.toast('A force is already on its way.'); return false; }
+  if (!E2.state.startStrike(targetId)) { E2.ui.toast('Train some troops first.'); return false; }
+  E2.sfx && E2.sfx.play('boom');
+  E2.worldmap.refresh();
+  E2.ui.updateHud();
+  return true;
+}
+
+function recall() {
+  E2.state.endStrike();
+  notifiedFor = 0;
+  E2.ui.toast('Force recalled');
+  E2.worldmap.refresh();
+  E2.ui.updateHud();
+}
+
+// Called every clock tick, also while the World map is open: tell the player when the first units land.
+function checkStrike(now) {
   const S = E2.state.get();
+  if (!S || live || prompting || E2.state.inEnemyView()) return;
+  const ss = strikeState(now);
+  if (!ss || !ss.ready || notifiedFor === ss.st.startAt) return;
+  notifiedFor = ss.st.startAt;
+  prompting = true;
+  const names = ss.arrived.map(g => `${g.n}× ${E2.armyIcon(g.k)}`).join(' ');
+  const more = ss.allIn ? '' : '<br>The rest of your force is still on its way and will join the battle as it lands.';
+  E2.ui.closeSheet();
+  E2.ui.modal({
+    title: '🚀 Your force has arrived!',
+    body: `${names} reached <b>${countryName(ss.st.target)}</b>.${more}`,
+    buttons: [
+      { label: 'Later', onClick: () => { prompting = false; } },
+      { label: 'Fight!', cls: 'primary', onClick: () => { prompting = false; engage(); } },
+    ],
+  });
+}
+
+// Open the battle for the current strike (only once some units have arrived).
+function engage() {
+  const ss = strikeState(Date.now());
+  if (!ss || !ss.ready) return E2.ui.toast('Your troops have not arrived yet.');
+  startAttack(ss.st.target);
+}
+
+function landArrivals() {
+  const { sim } = live, now = Date.now(), landed = [];
+  live.arrivals = live.arrivals.filter(a => {
+    if (now < a.at) return true;
+    sim.reserve[a.k] = (sim.reserve[a.k] || 0) + a.n;
+    landed.push(a);
+    return false;
+  });
+  if (!landed.length) return;
+  sim.expecting = live.arrivals.length;
+  sim.limit = Math.max(sim.limit, sim.t + 90);                // every arrival gives the battle more time
+  if (!live.sel || !(sim.reserve[live.sel] > 0)) live.sel = landed[0].k;
+  E2.ui.toast(`${landed.map(a => E2.ARMY[a.k].name).join(', ')} arrived!`);
+  E2.sfx && E2.sfx.play('boom');
+  buildTray();
+}
+
+function startAttack(targetId) {
+  const S = E2.state.get(), now = Date.now(), st = S.strike && S.strike.target === targetId ? S.strike : null;
   const enemy = E2.enemy.generate(targetId, S.colonies.length);
-  const army = Object.assign({}, S.army);
+  const army = {}, arrivals = [];
+  if (st) {
+    for (const [k, g] of Object.entries(st.groups)) {
+      const n = Math.min(g.n, S.army[k] || 0);
+      if (!n) continue;
+      if (g.arriveAt <= now) army[k] = n; else arrivals.push({ k, n, at: g.arriveAt });
+    }
+  } else Object.assign(army, S.army);                          // no strike (debug use): everything is already there
   if (!Object.values(army).some(n => n > 0)) { E2.ui.toast('Train some troops first.'); return E2.app.showWorld(); }
   E2.ui.closeSheet();
   E2.state.enterEnemy(enemy);
   E2.app.showBase();
   const sim = E2.raid.makeAttackSim(enemy, army);
-  begin('attack', sim, { enemy }, `⚔ Attack ${countryName(targetId)}`);
+  begin('attack', sim, { enemy, arrivals }, `⚔ Attack ${countryName(targetId)}`);
   E2.ui.toast('Pick a unit, then tap the map outside the base to land troops.');
 }
 
@@ -222,6 +307,7 @@ function finishAttack() {
   const { enemy, sim } = live;
   const out = E2.raid.attackOutcome(sim);
   endBattle();
+  E2.state.endStrike();
   E2.state.exitEnemy();
   const report = E2.state.applyAttack(enemy, out, Date.now());
   E2.app.goView(E2.state.get().view);
@@ -275,5 +361,5 @@ function init() {
   $('btnSkip').onclick = skip;
 }
 
-E2.raidview = { init, check, active, bannerText, mapTap, debugTrigger, ensurePlanned, startAttack, sim: () => live && live.sim };
+E2.raidview = { init, check, active, bannerText, mapTap, debugTrigger, ensurePlanned, startAttack, launch, recall, engage, checkStrike, strikeState, sim: () => live && live.sim };
 })();

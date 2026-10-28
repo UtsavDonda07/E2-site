@@ -232,8 +232,8 @@ function step(sim) {
   if (sim.mode === 'attack') {                           // you attack: the battle runs until you are spent
     const reserve = Object.values(sim.reserve).reduce((a, b) => a + b, 0);
     if (!sim.buildings.some(b => b.alive)) { sim.done = true; sim.endReason = 'wiped'; }
-    else if (!reserve && !unitsAlive && !sim.strikes.length) { sim.done = true; sim.endReason = 'spent'; }
-    else if (sim.t >= R.maxTime) { sim.done = true; sim.endReason = 'time'; }
+    else if (!reserve && !unitsAlive && !sim.strikes.length && !sim.expecting) { sim.done = true; sim.endReason = 'spent'; }
+    else if (sim.t >= sim.limit && !sim.expecting) { sim.done = true; sim.endReason = 'time'; }
     return;
   }
   const raidersLeft = sim.pending.length + unitsAlive;
@@ -258,6 +258,7 @@ function makeAttackSim(enemy, army) {
     t: 0, done: false, mode: 'attack', rand: rng(7), buildings: blds, byUid: {}, units: [], pending: [], effects: [], strikes: [],
     ability: { charges: R.strike.charges, cd: 0 }, nextId: 1, endReason: null,
     reserve: Object.assign({}, army), deployed: {},
+    expecting: 0, limit: R.maxTime,                      // units still travelling to the battle / time limit (grows as they arrive)
   };
   for (const b of blds) sim.byUid[b.uid] = b;
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;

@@ -297,6 +297,17 @@ E2.ARMY = {
 };
 E2.ARMY_KEYS = Object.keys(E2.ARMY);
 
+// An attack force travels from your nearest territory to the target. Time = distance / unit speed, kept between 10 s and 5 min.
+E2.TRAVEL = { speed: { infantry: 6, tank: 12, jet: 40, drone: 30, missile: 60, satellite: 80 }, min: 10, max: 300 };   // km per second
+E2.AIR_UNITS = ['jet', 'drone', 'missile', 'satellite'];
+E2.distanceKm = (a, b) => {                              // great-circle distance between two countries' label points
+  const R = 6371, rad = Math.PI / 180, [lo1, la1] = a.label, [lo2, la2] = b.label;
+  const dLa = (la2 - la1) * rad, dLo = (lo2 - lo1) * rad;
+  const h = Math.sin(dLa / 2) ** 2 + Math.cos(la1 * rad) * Math.cos(la2 * rad) * Math.sin(dLo / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+};
+E2.travelSecs = (type, km) => Math.round(Math.min(E2.TRAVEL.max, Math.max(E2.TRAVEL.min, km / (E2.TRAVEL.speed[type] || 6))));
+
 // Pictures of the flying units (Kenney "Space Shooter Extension", CC0). Yours are blue, the enemy's are red and yellow.
 E2.UNIT_IMG = { jet: 'art/space/jet.png', drone: 'art/space/drone.png', missile: 'art/space/missile-blue.png', satellite: 'art/space/satellite-blue.png' };
 E2.UNIT_IMG_ENEMY = { jet: 'art/space/jet.png', drone: 'art/space/drone.png', missile: 'art/space/missile-red.png', satellite: 'art/space/satellite-yellow.png' };

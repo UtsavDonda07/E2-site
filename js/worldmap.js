@@ -28,7 +28,8 @@ function layout() {
       paths.set(c.id, p);
     }
   }
-  fitTo(E2.state.owned().concat([...reach]));
+  const st = E2.state.strike();
+  fitTo(st ? [st.from, st.target] : E2.state.owned().concat([...reach]));
 }
 
 // Zoom so the given countries fill the view.
@@ -77,7 +78,54 @@ function draw() {
   setCam();
   ctx.lineWidth = Math.max(0.5, 1.2 / cam.z); ctx.strokeStyle = 'rgba(28,58,20,.85)'; ctx.lineJoin = 'round';
   for (const c of order) { ctx.fillStyle = colorOf(c); ctx.fill(paths.get(c.id)); ctx.stroke(paths.get(c.id)); }
+  drawStrike();
   drawShips();
+}
+
+// The attack force: a dashed route from your base to the target, and every unit group moving along it at its own speed.
+function drawStrike() {
+  const st = E2.state.strike();
+  if (!st) return;
+  const a = E2.byId(st.from), b = E2.byId(st.target);
+  if (!a || !b) return;
+  const pa = proj(a.label[0], a.label[1]), pb = proj(b.label[0], b.label[1]), now = Date.now();
+  ctx.save();
+  setCam();
+  ctx.setLineDash([7 / cam.z, 6 / cam.z]); ctx.lineWidth = 2.4 / cam.z; ctx.strokeStyle = 'rgba(255,255,255,.85)';
+  ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+  ctx.restore();
+  ctx.save();
+  ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);                              // screen space: icons keep their size at every zoom
+  const sx = p => cam.tx + p.x * cam.z, sy = p => cam.ty + p.y * cam.z;
+  marker(sx(pa), sy(pa), '#4aa3ff', 'BASE');
+  marker(sx(pb), sy(pb), '#ff5a45', 'TARGET');
+  const dx = pb.x - pa.x, dy = pb.y - pa.y, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len;     // route normal
+  const groups = Object.entries(st.groups).sort((g, h) => g[1].secs - h[1].secs);
+  groups.forEach(([k, g], i) => {
+    const p = Math.min(1, Math.max(0, (now - st.startAt) / (g.arriveAt - st.startAt)));
+    const air = E2.AIR_UNITS.includes(k), lift = air ? Math.sin(Math.PI * p) * len * 0.1 : 0;                  // aircraft and missiles fly an arc
+    const side = (i - (groups.length - 1) / 2) * 24 / cam.z;                                                 // keep the groups apart
+    const x = sx({ x: pa.x + dx * p + nx * side, y: pa.y + dy * p + ny * side }), y = sy({ x: 0, y: pa.y + dy * p + ny * side - lift });
+    if (air && p > 0 && p < 1) {                                                                                 // fading trail
+      ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 3; ctx.beginPath();
+      for (let s = 0; s <= 6; s++) { const q = Math.max(0, p - s * 0.012), l2 = Math.sin(Math.PI * q) * len * 0.1; const tx = sx({ x: pa.x + dx * q + nx * side, y: 0 }), ty = sy({ x: 0, y: pa.y + dy * q + ny * side - l2 }); s ? ctx.lineTo(tx, ty) : ctx.moveTo(tx, ty); }
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.beginPath(); ctx.ellipse(x, y + 14 + (air ? lift * cam.z * 0.3 : 0), 11, 4, 0, 0, 7); ctx.fill();   // shadow
+    const img = E2.art.unitSprite(k, true);
+    if (img) ctx.drawImage(img, x - 15, y - 15, 30, 30);
+    else { ctx.font = '24px system-ui, "Segoe UI Emoji", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(E2.ARMY[k].icon, x, y); }
+    ctx.font = '900 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText('×' + g.n, x, y + 21); ctx.fillStyle = '#fff'; ctx.fillText('×' + g.n, x, y + 21);
+  });
+  ctx.restore();
+}
+function marker(x, y, color, label) {
+  ctx.fillStyle = color; ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(x, y, 8, 0, 7); ctx.stroke(); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 3, 0, 7); ctx.fill();
+  ctx.font = '900 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.strokeText(label, x, y - 13); ctx.fillStyle = '#fff'; ctx.fillText(label, x, y - 13);
 }
 
 // Trade ships sail out to their buyer and back. They keep the same size on screen at every zoom.
@@ -104,7 +152,7 @@ function drawShips() {
   }
 }
 let shipTimer = 0;
-const sailing = () => { if (visible() && E2.state.trips().length) draw(); };
+const sailing = () => { if (visible() && (E2.state.trips().length || E2.state.strike())) draw(); if (visible()) tickStrikeCard(); };
 
 // The test point is in device pixels; the path is placed by the current transform.
 function pickAt(cssX, cssY) {
@@ -159,11 +207,13 @@ function zoomAt(sx, sy, f) {
 function tap(x, y) {
   const c = pickAt(x, y);
   if (c) { sel = c; $('wSheet').classList.add('hidden'); draw(); renderCard(); }
+  else if (sel && E2.state.strike()) { sel = null; draw(); renderCard(); }
 }
 
 // ---------- Target card ----------
 function renderCard() {
   const el = $('wCard'), S = E2.state.get();
+  if (!sel && S.strike) return renderStrikeCard();
   if (!sel) {
     el.innerHTML = `<div class="hint">Tap a <b style="color:#d2392a">red</b> country to scout it. Conquer ${E2.WIN_COUNT} to become Emperor of Emperors.</div>`;
     return;
@@ -186,9 +236,54 @@ function renderCard() {
     <div class="wc-sub">Defences: ${d.guns} guns · ${d.missiles} missile · ${d.aa} anti-air · level ${d.level}</div>
     <div class="wc-sub">Loot up to ${loot}</div>
     <div class="wc-sub">Your army: ${army}</div>
-    <div class="wc-btns"><button class="btn" id="wTrain">🪖 Army</button><button class="btn primary" id="wGo" ${E2.ARMY_KEYS.some(k => S.army[k] > 0) ? '' : 'disabled'}>⚔ Attack!</button></div>`;
+    <div class="wc-sub">${travelLine(sel.id)}</div>
+    <div class="wc-btns"><button class="btn" id="wTrain">🪖 Army</button><button class="btn primary" id="wGo" ${E2.ARMY_KEYS.some(k => S.army[k] > 0) && !S.strike ? '' : 'disabled'}>${S.strike ? 'Force en route' : '⚔ Attack!'}</button></div>`;
   $('wTrain').onclick = openArmy;
-  $('wGo').onclick = () => { hide(); E2.raidview.startAttack(sel.id); };
+  $('wGo').onclick = () => { if (E2.raidview.launch(sel.id)) sel = null; };
+}
+
+// ---------- Travel ----------
+function travelLine(targetId) {
+  const plan = E2.state.strikePlan(targetId), secs = Object.values(plan.groups).map(g => g.secs);
+  if (!secs.length) return `Distance ${E2.fmtNum(plan.km)} km`;
+  const lo = Math.min(...secs), hi = Math.max(...secs);
+  return `🚀 ${E2.fmtNum(plan.km)} km · arrives in ${E2.fmtTime(lo)}${hi > lo ? ' to ' + E2.fmtTime(hi) : ''}`;
+}
+
+let strikeSig = '';
+function renderStrikeCard() {
+  const el = $('wCard'), ss = E2.raidview.strikeState(Date.now());
+  if (!ss) return;
+  const { st } = ss;
+  strikeSig = ss.groups.map(g => g.k + (g.left <= 0 ? 1 : 0)).join();
+  const rows = ss.groups.sort((a, b) => a.at - b.at).map(g => `<div class="sk-g ${g.left <= 0 ? 'in' : ''}" data-k="${g.k}"><span class="sk-i">${E2.armyIcon(g.k)}</span><b>×${g.n}</b><span class="sk-eta">${g.left <= 0 ? 'Arrived ✓' : '⏱ ' + E2.fmtTime(g.left)}</span></div>`).join('');
+  el.innerHTML = `<div class="wc-name">🚀 Attack on ${E2.byId(st.target).name}</div>
+    <div class="wc-sub">From ${E2.byId(st.from).name} · ${E2.fmtNum(st.km)} km</div>
+    <div class="sk-groups">${rows}</div>
+    <div class="wc-btns"><button class="btn" id="skRecall">Recall</button><button class="btn primary" id="skFight" ${ss.ready ? '' : 'disabled'}>⚔ Fight!</button></div>
+    ${E2.DEBUG ? '<div class="wc-btns"><button class="btn" id="skSkip">⏩ Skip travel (debug)</button></div>' : ''}`;
+  $('skRecall').onclick = () => E2.raidview.recall();
+  $('skFight').onclick = () => { hide(); E2.raidview.engage(); };
+  if ($('skSkip')) $('skSkip').onclick = () => { for (const g of Object.values(st.groups)) g.arriveAt = Date.now(); E2.state.save(); renderStrikeCard(); draw(); };
+}
+// Once a second: update the countdowns in place, and rebuild the card only when a group arrives.
+function tickStrikeCard() {
+  const S = E2.state.get();
+  if (!S || !S.strike || sel) return;
+  const ss = E2.raidview.strikeState(Date.now());
+  if (!ss) return;
+  if (ss.groups.map(g => g.k + (g.left <= 0 ? 1 : 0)).join() !== strikeSig || !$('skFight')) return renderStrikeCard();
+  for (const g of ss.groups) {
+    const row = $('wCard').querySelector(`.sk-g[data-k="${g.k}"] .sk-eta`);
+    if (row) row.textContent = g.left <= 0 ? 'Arrived ✓' : '⏱ ' + E2.fmtTime(g.left);
+  }
+}
+// Called after a force is launched or recalled: re-frame the map and rebuild the card.
+function refresh() {
+  sel = null;
+  $('wSheet').classList.add('hidden');
+  if (view) layout();
+  renderCard();
 }
 
 // ---------- Army sheet ----------
@@ -240,7 +335,7 @@ function init() {
 }
 
 E2.worldmap = {
-  init, show, hide, visible, openArmy,
+  init, show, hide, visible, openArmy, refresh,
   select: id => { sel = E2.byId(id); draw(); renderCard(); },
   // Helpers for tests: where a country's label sits on screen, and which country is at a point.
   screenOf: id => { const c = E2.byId(id), q = proj(c.label[0], c.label[1]); return { x: cam.tx + q.x * cam.z, y: cam.ty + q.y * cam.z }; },

@@ -536,8 +536,41 @@ function applyAttack(enemy, outcome, now = Date.now()) {
   return report;
 }
 
+// Debug only (needs ?debug=1): plenty of everything so attacks and battles can be tested.
+function cheat() {
+  if (!E2.DEBUG || !S) return;
+  for (const k of E2.RES_KEYS) S.resources[k] = Math.max(S.resources[k], 999999);
+  for (const k of E2.ARMY_KEYS) S.army[k] = Math.max(S.army[k] || 0, 25);
+  save();
+}
+
+// ---------- A strike force on its way to another country ----------
+// S.strike = { target, from, km, startAt, groups: { unitType: { n, secs, arriveAt } } }. Units stay in S.army until the battle is settled.
+function strikePlan(targetId) {
+  const t = E2.byId(targetId);
+  let from = null, km = Infinity;
+  for (const id of owned()) {                              // launch from the nearest territory
+    const d = E2.distanceKm(E2.byId(id), t);
+    if (d < km) { km = d; from = id; }
+  }
+  const groups = {};
+  for (const k of E2.ARMY_KEYS) if (S.army[k] > 0) groups[k] = { n: S.army[k], secs: E2.travelSecs(k, km) };
+  return { target: targetId, from, km: Math.round(km), groups };
+}
+function startStrike(targetId, now = Date.now()) {
+  if (S.strike) return null;
+  const plan = strikePlan(targetId);
+  if (!Object.keys(plan.groups).length) return null;
+  for (const g of Object.values(plan.groups)) g.arriveAt = now + g.secs * 1000;
+  S.strike = Object.assign(plan, { startAt: now });
+  save();
+  return S.strike;
+}
+const strike = () => (S && S.strike) || null;
+function endStrike() { if (S) { S.strike = null; save(); } }
+
 E2.state = {
-  get, load, save, reset, create, grid, tick, viewId, owned, all, homeBuildings, switchView, enterEnemy, exitEnemy, inEnemyView, raidView,
+  cheat, strikePlan, startStrike, strike, endStrike,  get, load, save, reset, create, grid, tick, viewId, owned, all, homeBuildings, switchView, enterEnemy, exitEnemy, inEnemyView, raidView,
   hq, hqLevel, caps, maxLevelFor, maxCount, countOf, busy, freeBuilders, byUid,
   canAfford, missing, occupant, canPlace, placeBlock, upgradeBlock, obstacleAt, visualObstacles, jobs, startClear,
   startBuild, moveBlock, moveBuilding, startUpgrade, finishNow, collect, collectAll,

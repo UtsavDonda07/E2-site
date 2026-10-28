@@ -1,5 +1,5 @@
 {
-    "version":  20261028111644,
+    "version":  20261028121811,
     "files":  {
                   "art/advisor.webp":  "4d20e5aab36f3f65366b09ed248550af5f0bdfd2eca2e06eb552ce4b38b9ff7e",
                   "art/LICENSE-Kenney-CC0.txt":  "f5f520f81277128fb422aebe334d2f08e6d8e5f7face6008885d8ff920253724",
@@ -32,23 +32,23 @@
                   "art/towers/t74.png":  "e9c5a20235cebb5fd7ad71f7710d239678c77f2d4075d6fabc4a6fb181400184",
                   "art/towers/t94.png":  "4fee69614b10deca5a190416cbd229809ac9175ecd26bfd19efb713efbc2a76c",
                   "art/towers/t99.png":  "0c8e13d6ef18dc79af2efb7356003ecf0ea18d67ceec99e5f8233f2502b097e9",
-                  "css/style.css":  "2c9be910cc7b7704dc5e24eb0c09dfd46379cf7733a2f160298f7fae872f50ef",
+                  "css/style.css":  "9856dec9a9b41189370960f86e76c10ee6c37edb9697cdcadbdac90fb3d0da75",
                   "data/countries.js":  "fcd34b6295d62c60e2d59a1d2383d08e1f64213974683e3bce6ae7106f0799fa",
                   "index.html":  "ea0a0e8c83727e206222d30f5a52851404aeb9867e4bfa2ba4fbb16756f6ecfd",
                   "js/art.js":  "36711b41e85c2c95eb07f40329d64054c50ce6708baa0c240192eab5c25e9b48",
                   "js/base.js":  "b5a0da2edad4db499e10037c8fa04eabbbf60fc3169fe2c18d272a2ff345eccc",
                   "js/bridge.js":  "a4b6e8b3369508fef6487d9afed88ef4c5af9d4b370f58fc2556cfe942e1237f",
-                  "js/defs.js":  "7a6998b3b6f151be6bc218c4a3d9e64ed5d803c24886d34314b2d513e57dd932",
+                  "js/defs.js":  "474b40eeb4f088a2a747154e6a81c2c8f4a291a6a5402ce249c4f0baaf44fc24",
                   "js/enemy.js":  "dcdbacd7244b61e3674837ef53a9e3e4ca153296a3ddd60dc6b2e4b9e84c5a9a",
                   "js/loading.js":  "061c4fa4f3c6d7805b044588de204ab30822287957312b4bb97cdae1997f6da6",
-                  "js/main.js":  "343b9c9a53432bb497e31be0fbc888494856223b579a5612f11560bb9a5829fa",
-                  "js/raid.js":  "9a21b779bf8de953874b02cffa23a013b88197c5672541cf746bca66f6ac25ee",
-                  "js/raidview.js":  "f2a08c2dcb9374a87f3a9fada34a52995cf91dfbf79614b34389fed7f6b67daf",
+                  "js/main.js":  "7e07044137c743128b48ca8ee918bfe8df52d509f8926289f2892d9efe4399e4",
+                  "js/raid.js":  "025bfd3f1993c6df17a6343ef3211855ab4e2d95b27976a2361dbdd4ac87c757",
+                  "js/raidview.js":  "0bd5db6e9b676db97e2a0dc94a1ddc355c782d6940facfc999a3722cbfffc33d",
                   "js/select.js":  "f68b0e10072a9ae2b5668e4aca566f04e8c75b60e27de29eb1274da63824fd69",
                   "js/sfx.js":  "c1a4958ff63cf7fe9bc8ab207af3c73f96786e40a0af5dba22c5312be120f73a",
-                  "js/state.js":  "4b72cc4d0633acfbb839f82dea16f8f538a3151d6d836e8a66266cb252afb3e1",
+                  "js/state.js":  "b7cb8a8d929e64ef5cf4f115728012f548a4ba9c9e5c01a02921869acb4777f7",
                   "js/tutorial.js":  "e4177f200819d60f41d290fa428143010f691c06837fecca9a9d1bd36705b1f7",
-                  "js/ui.js":  "dca7a3cc41b3e117a0493c9a6ae935986b2b98ac4527dcf29549de915b4bb1ef",
-                  "js/worldmap.js":  "10c634f16aab89cd01789674fb80f96f7bcdcec37c2fd38f3c77de17a6df8daa"
+                  "js/ui.js":  "61fc6af417280f0077c31cb17929682163df1a703ba6f8f7cc2da527ab6188da",
+                  "js/worldmap.js":  "4f19cfdd9fbf45a744a34a14196bd47724e3927610f104b524c896a8cfbe2967"
               }
 }

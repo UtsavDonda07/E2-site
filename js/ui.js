@@ -87,7 +87,7 @@ function updateHud() {
   $('xpFill').style.width = (lv.into / lv.need * 100) + '%';
 
   const ban = $('banner'), info = E2.raidview && E2.raidview.bannerText(now);
-  if (info && left <= 0) { ban.textContent = info.text; ban.classList.remove('hidden'); } else ban.classList.add('hidden');
+  if (info && (left <= 0 || info.strike)) { ban.textContent = info.text; ban.classList.remove('hidden'); } else ban.classList.add('hidden');
 }
 
 function setHome() {
@@ -472,7 +472,9 @@ function settings() {
     { label: E2.sfx.isMuted() ? '🔇 Sound off' : '🔊 Sound on', onClick: () => { E2.sfx.setMuted(!E2.sfx.isMuted()); toast(E2.sfx.isMuted() ? 'Sound off' : 'Sound on'); } },
   ];
   if (S.colonies.length) buttons.unshift({ label: '🏴 Territories', onClick: showTerritories });
-  if (E2.DEBUG) buttons.push({ label: '⚔ Test raid (debug)', onClick: () => E2.raidview.debugTrigger() });
+  if (E2.DEBUG) buttons.push(
+    { label: '🧪 Free everything', onClick: () => { E2.state.cheat(); afterChange(); toast('Resources and army filled (debug)'); } },
+    { label: '⚔ Test raid (debug)', onClick: () => E2.raidview.debugTrigger() });
   buttons.push(
     { label: 'Erase save', cls: 'danger', onClick: () => modal({
       title: 'Erase everything?', body: 'This cannot be undone.',
