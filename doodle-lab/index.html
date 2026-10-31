@@ -464,7 +464,7 @@ const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).
 const C = { board: css('--board'), grid: css('--grid'), text: css('--text'), ink: css('--ink'), marker: css('--marker'), cargo: css('--cargo'), water: css('--water') };
 
 // ---------- Saved stars ----------
-const NUM_LEVELS = 37;
+const NUM_LEVELS = 40;
 let best = Array(NUM_LEVELS).fill(0), dailySave = { date: '', stars: 0, streak: 0, last: '' };
 try { const v = JSON.parse(localStorage.getItem('doodlelab.stars') || 'null'); if (Array.isArray(v)) v.slice(0, NUM_LEVELS).forEach((n, i) => { best[i] = n | 0; }); } catch (e) { /* storage blocked */ }
 try { const v = JSON.parse(localStorage.getItem('doodlelab.daily') || 'null'); if (v && typeof v === 'object') dailySave = Object.assign(dailySave, v); } catch (e) { /* storage blocked */ }
@@ -1960,6 +1960,124 @@ const LEVELS = [
       };
     },
   },
+  {
+    id: 'stars', short: 'Stars', cargo: false, title: 'The Constellation', ink: 1000, worldW: W,
+    text: 'No physics, just a steady hand. Connect the stars in order with a line: 1, 2, 3, 4, 5, 6. Pass close to each star. The straighter you draw, the fewer stars you waste ink on.',
+    zone: { x0: 20, y0: 70, x1: 340, y1: 470 },
+    make(engine) {
+      const STARS = [{ x: 50, y: 390 }, { x: 110, y: 235 }, { x: 170, y: 355 }, { x: 230, y: 200 }, { x: 290, y: 330 }, { x: 200, y: 110 }];
+      const statics = [rect(180, 600, 360, 200)];
+      const reached = strokes => { let k = 0; for (const st of strokes) for (const q of resample(st, 3)) { if (k < STARS.length && Math.hypot(q.x - STARS[k].x, q.y - STARS[k].y) < 17) k++; } return k; };
+      return {
+        statics, duration: 3, bodyOpts: { frictionAir: AIR },
+        tick() { glueInk(this); },
+        judge(t, body, inkUsed) {
+          if (t < 1.2) return null;
+          const k = reached(S.strokes);
+          if (k < STARS.length) return { stars: 0, title: 'Not all of them.', text: 'You reached ' + k + ' of 6 stars. They must be joined in order, starting at 1, so pass close to each one.', stat: k + ' of 6 stars' };
+          const pct = Math.round(inkUsed / budget() * 100), s = inkStars(inkUsed, budget(), 0.97, 0.9);
+          return { stars: s, title: pick(['Connected!', 'A fine constellation.', 'Starry-eyed.'], s / 3.01), text: s < 3 ? 'All six are joined. Straighter lines between the stars use less ink.' : 'Straight lines, sharp corners, no waste.', stat: `Ink used: ${pct}%` };
+        },
+        drawBack(c, ts) {
+          const k = reached(S.strokes);
+          c.save();
+          c.strokeStyle = 'rgba(60,90,120,.25)'; c.lineWidth = 2; c.setLineDash([3, 8]); c.beginPath(); STARS.forEach((q, i) => i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y)); c.stroke(); c.setLineDash([]);
+          STARS.forEach((q, i) => {
+            const on = i < k, next = i === k, r = next ? 15 + Math.sin(ts / 180) * 2 : 14;
+            c.fillStyle = on ? '#ffd93b' : '#fff'; c.strokeStyle = C.text; c.lineWidth = 3; c.beginPath();
+            for (let j = 0; j < 10; j++) { const a = -Math.PI / 2 + j * Math.PI / 5, rr = j % 2 ? r * 0.45 : r; c.lineTo(q.x + Math.cos(a) * rr, q.y + Math.sin(a) * rr); }
+            c.closePath(); c.fill(); c.stroke();
+            c.fillStyle = C.text; c.font = '400 11px "Permanent Marker", sans-serif'; c.textAlign = 'center'; c.fillText(i + 1, q.x, q.y + 30);
+          });
+          c.fillStyle = k === STARS.length ? '#14a05a' : C.marker; c.font = '400 14px "Permanent Marker", sans-serif'; c.fillText(k + ' of 6', 180, 90);
+          c.restore();
+        },
+      };
+    },
+  },
+  {
+    id: 'weigh', short: 'Weight', cargo: true, title: 'The Counterweight', ink: 320, worldW: W,
+    text: 'A rope runs over the top. The ball sits on the ground on the right. Whatever you draw in the shaft on the left becomes the weight on the other end. Make it heavy enough to haul the ball up above the line.',
+    zone: { x0: 70, y0: 110, x1: 150, y1: 250 },
+    make(engine) {
+      const statics = [rect(180, 600, 360, 200), rect(-12, 330, 24, 400), rect(372, 330, 24, 400)];
+      const cargo = makeGerald(290, 486, { frictionAir: 0 });
+      let weight = null, wx = 110, wy0 = 180, maxD = 200, d = 0, v = 0, upAt = null;
+      return {
+        statics, cargo, duration: 9, bodyOpts: { frictionAir: AIR },
+        onBody(body) { weight = body; wx = body.position.x; wy0 = body.position.y; maxD = Math.max(0, 497 - body.bounds.max.y); Composite.add(engine.world, cargo); },
+        tick(t) {
+          if (!weight) return;
+          if (t > 0.8) {
+            const mw = weight.mass, mb = cargo.mass, a = 0.278 * (mw - mb) / (mw + mb);
+            v = Math.max(0, v + a); d += v;
+            if (d >= maxD) { d = maxD; v = 0; }
+          }
+          Body.setPosition(weight, { x: wx, y: wy0 + d }); Body.setVelocity(weight, { x: 0, y: v }); Body.setAngle(weight, 0); Body.setAngularVelocity(weight, 0);
+          Body.setPosition(cargo, { x: 290, y: 486 - d }); Body.setVelocity(cargo, { x: 0, y: -v });
+          if (upAt == null && 486 - d < 250) upAt = t;
+        },
+        judge(t, body, inkUsed) {
+          if (upAt != null) {
+            const s = upAt < 2.0 ? 3 : upAt < 3.2 ? 2 : 1;
+            return { stars: s, title: ['', 'Slowly up.', 'Up it goes!', 'Heavy hitter!'][s], text: ['', 'It rose, slowly. A heavier weight pulls faster.', 'Good. More ink in the weight means a faster lift.', 'A mighty weight. The ball shot up.'][s], stat: 'Lifted in ' + upAt.toFixed(1) + ' s' };
+          }
+          if (t >= 9) return { stars: 0, title: 'Too light.', text: 'The weight is lighter than the ball. Ink has weight, so scribble more of it into the shaft: zigzag back and forth.', stat: '' };
+          return null;
+        },
+        drawBack(c) {
+          const by = weight ? weight.bounds.min.y : 110, wxx = weight ? weight.position.x : 110, bY = cargo.position.y;
+          c.save();
+          c.fillStyle = 'rgba(60,90,120,.12)'; c.fillRect(70, 110, 80, 390);
+          c.strokeStyle = 'rgba(27,35,64,.7)'; c.lineWidth = 3; c.beginPath(); c.moveTo(wxx, Math.max(46, by)); c.lineTo(wxx, 46); c.lineTo(290, 46); c.lineTo(290, bY - 13); c.stroke();
+          for (const x of [wxx, 290]) { c.fillStyle = '#ffd26a'; c.strokeStyle = C.text; c.lineWidth = 3; c.beginPath(); c.arc(x, 46, 9, 0, 6.3); c.fill(); c.stroke(); }
+          c.strokeStyle = 'rgba(232,69,47,.5)'; c.lineWidth = 2; c.setLineDash([5, 6]); c.beginPath(); c.moveTo(240, 250); c.lineTo(340, 250); c.stroke(); c.setLineDash([]);
+          c.fillStyle = 'rgba(232,69,47,.8)'; c.font = '400 11px "Patrick Hand", sans-serif'; c.textAlign = 'center'; c.fillText('lift it above here', 290, 243);
+          c.restore();
+        },
+      };
+    },
+  },
+  {
+    id: 'swing', short: 'Swing', cargo: true, title: 'The Swing', ink: 150, worldW: W, noInk: true,
+    text: 'The ball swings on a rope. Tap the board to let go at just the right moment, so it flies into the ring. A clean release needs no ink at all. Ink only helps catch it, and costs you stars.',
+    zone: { x0: 20, y0: 250, x1: 345, y1: 470 },
+    make(engine) {
+      const PIV = { x: 180, y: 60 }, LEN = 175, RING = { x: 300, y: 330, r: 30 };
+      const statics = [rect(180, 600, 360, 200), rect(-12, 330, 24, 400), rect(372, 330, 24, 400)];
+      const cargo = makeGerald(PIV.x - LEN * Math.sin(1.1), PIV.y + LEN * Math.cos(1.1), { frictionAir: 0.0 });
+      const rope = Matter.Constraint.create({ pointA: PIV, bodyB: cargo, pointB: { x: 0, y: 0 }, length: LEN, stiffness: 1, damping: 0, render: { visible: false } });
+      let cargoIn = false, released = false, hitAt = null, tapAt = null;
+      return {
+        statics, cargo, duration: 10, noInk: true, bodyOpts: { frictionAir: AIR },
+        tick(t) {
+          glueInk(this);
+          if (!cargoIn && t > 0.3) { Composite.add(engine.world, [cargo, rope]); cargoIn = true; }
+          if (hitAt == null && cargoIn && Math.hypot(cargo.position.x - RING.x, cargo.position.y - RING.y) < RING.r) hitAt = t;
+        },
+        onTap() { if (!released && cargoIn) { released = true; tapAt = S.t; Composite.remove(engine.world, rope); beep(SND.pop); } },
+        judge(t, body, inkUsed) {
+          if (hitAt != null && t > hitAt + 0.3) {
+            const s = inkUsed < 1 ? 3 : inkUsed <= budget() * 0.5 ? 2 : 1;
+            return { stars: s, title: pick(['Perfect release!', 'Let go, fly, score.', 'Swing and a hit!'], s / 3.01), text: s === 3 ? 'No ink, just timing. Beautiful.' : 'It went through the ring. Try it again with no ink at all for three stars.', stat: tapAt != null ? 'Let go at ' + (tapAt - 0.3).toFixed(2) + ' s' : '' };
+          }
+          if (released && cargoIn && hitAt == null && (cargo.position.y > 482 || t >= 9.9)) return { stars: 0, title: 'Missed the ring.', text: 'You let go too early or too late. Watch the swing, and tap a little sooner or later next time.', stat: tapAt != null ? 'Let go at ' + (tapAt - 0.3).toFixed(2) + ' s' : '' };
+          if (t >= 9.9) return { stars: 0, title: 'You never let go.', text: 'Tap the board while the ball is swinging to release it.', stat: '' };
+          return null;
+        },
+        drawBack(c) {
+          c.save();
+          if (cargoIn && !released) { c.strokeStyle = 'rgba(27,35,64,.8)'; c.lineWidth = 3; c.beginPath(); c.moveTo(PIV.x, PIV.y); c.lineTo(cargo.position.x, cargo.position.y); c.stroke(); }
+          else if (!cargoIn) { c.strokeStyle = 'rgba(27,35,64,.8)'; c.lineWidth = 3; c.beginPath(); c.moveTo(PIV.x, PIV.y); c.lineTo(cargo.position.x, cargo.position.y); c.stroke(); }
+          c.fillStyle = C.text; c.beginPath(); c.arc(PIV.x, PIV.y, 7, 0, 6.3); c.fill();
+          c.strokeStyle = C.marker; c.lineWidth = 4; c.setLineDash([6, 5]); c.beginPath(); c.arc(RING.x, RING.y, RING.r, 0, 6.3); c.stroke(); c.setLineDash([]);
+          c.fillStyle = 'rgba(232,69,47,.18)'; c.fill();
+          if (S.mode === 'run' && !released) { c.fillStyle = C.marker; c.font = '400 15px "Permanent Marker", sans-serif'; c.textAlign = 'center'; c.fillText('TAP TO LET GO', 180, 500 - 4); }
+          c.restore();
+        },
+      };
+    },
+  },
 ];
 
 // ---------- Game state ----------
@@ -2006,7 +2124,7 @@ const nodePos = (k, n) => [ZIGZAG[k % ZIGZAG.length], (k + 0.5) / n * 100];
 // Pages of tests. A page opens when every test on the page before it is done and enough stars are collected.
 const WORLDS = [
   { name: 'Notebook', levels: [0, 1, 34, 14, 6, 31, 32, 3, 35, 30, 2, 7, 5, 12, 13], need: 30 },
-  { name: 'Blueprint', levels: [15, 21, 20, 28, 16, 25, 17, 23, 24, 36, 22, 27, 26, 29, 18], need: 30 },
+  { name: 'Blueprint', levels: [21, 20, 28, 37, 17, 25, 23, 24, 36, 38, 22, 26, 39, 29, 18], need: 30 },
 ];
 const PLAYABLE = WORLDS[0].levels;                           // the daily challenge draws from the first page, so it is the same for everybody
 const worldOf = i => WORLDS.findIndex(w => w.levels.includes(i));
@@ -2558,6 +2676,9 @@ const HINTS = [
   [(() => { const raw = Array.from({ length: 80 }, (_, i) => { const t = i / 80 * Math.PI * 2; return { x: 16 * Math.sin(t) ** 3, y: -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) }; }), xs = raw.map(q => q.x), ys = raw.map(q => q.y), k = 190 / (Math.max(...xs) - Math.min(...xs)), cx = (Math.max(...xs) + Math.min(...xs)) / 2, cy = (Math.max(...ys) + Math.min(...ys)) / 2; const out = raw.map(q => ({ x: 180 + (q.x - cx) * k, y: 270 + (q.y - cy) * k })); out.push(out[0]); return out; })()],     // trace: the heart itself
   [pts([[30, 200], [160, 250]])],                                                           // ferry: a small ramp that throws the ball onto the ferry
   [pts([[108, 426], [202, 426]]), pts([[238, 426], [332, 426]])],                           // road: a bridge over each gap
+  [pts([[50, 390], [110, 235], [170, 355], [230, 200], [290, 330], [200, 110]])],            // constellation: straight lines star to star
+  [pts([[80, 200], [140, 200], [140, 220], [80, 220], [80, 240], [140, 240]])],              // counterweight: a dense zigzag in the shaft
+  null,                                                                                     // swing: no drawing helps, so no hint
 ];
 function buyHint() {
   if (rw.coins < HINT_COST) { showToast('You need ' + (HINT_COST - rw.coins) + ' more drops for a hint. Earn stars or open your daily gift.'); return false; }
@@ -2610,6 +2731,7 @@ function finishStroke() {
 
 const canDraw = () => S.mode === 'draw' || (S.mode === 'run' && S.scene && S.scene.live);
 cv.addEventListener('pointerdown', e => {
+  if (S.mode === 'run' && S.scene && S.scene.onTap) { S.scene.onTap(); return; }
   if (!canDraw()) return;
   const p = toWorld(e);
   if (!inZone(p) || inGround(p) || S.inkUsed >= budget()) return;
@@ -2704,10 +2826,10 @@ function nearestTo(infos, P) {
 
 function startTest() {
   if (S.mode !== 'draw') return;
-  if (!S.strokes.length && !S.scene.live) { flash('Draw something first.'); return; }
+  if (!S.strokes.length && !S.scene.live && !S.scene.noInk) { flash('Draw something first.'); return; }
   loadLevel(S.lv, false);                                    // a fresh world every time
   const infos = buildBodies(S.scene.mirror ? S.strokes.concat(S.strokes.map(mirrorStroke)) : S.strokes, S.scene.bodyOpts);
-  if (!infos.length && !S.scene.live) { flash('Draw something first.'); return; }
+  if (!infos.length && !S.scene.live && !S.scene.noInk) { flash('Draw something first.'); return; }
   S.bodies = infos;
   S.main = !infos.length ? { body: S.scene.cargo } : S.scene.pick ? S.scene.pick(infos) : infos.reduce((a, b) => b.body.mass > a.body.mass ? b : a);       // the one the level watches: the heaviest, or the one on the hinge
   S.body = S.main.body;
@@ -2851,7 +2973,7 @@ function finish(r) {
     + '<h3>' + r.title + '</h3><p>' + r.text + '</p>' + (r.stat ? '<span class="stat">' + r.stat + '</span>' : '')
     + (earned ? '<div class="earn">+' + earned + ' ' + dropIcon + (luckyBonus ? ' <small>Lucky +' + luckyBonus + '</small>' : '') + '</div>' : '')
     + '<div class="row" style="margin-top:12px"><button class="btn" id="rRetry">Redraw</button>' + (r.stars ? '<button class="btn pri" id="rNext">' + nextLabel + '</button>' : '<button class="btn pri" id="rHome">Home</button>') + '</div>'
-    + (r.stars === 0 && S.hintLv !== S.lv ? '<button class="btn hintbtn" id="rHint">Show a hint &middot; ' + HINT_COST + ' ' + dropIcon + '</button>' : '')
+    + (r.stars === 0 && S.hintLv !== S.lv && HINTS[S.lv] ? '<button class="btn hintbtn" id="rHint">Show a hint &middot; ' + HINT_COST + ' ' + dropIcon + '</button>' : '')
     + '<button class="btn share" id="rShare">Share picture</button>' + streakNote + '</div>';
   el.hidden = false;
   if (hasGot(got)) setTimeout(() => showToast('Goal reached! ' + goalText(got)), 1000);
