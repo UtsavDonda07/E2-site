@@ -87,6 +87,9 @@ body:has(#play:not([hidden])) .dd, body:has(#ward:not([hidden])) .dd { opacity: 
 .homescroll { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding-bottom: 14px; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent); }
 .homescroll::-webkit-scrollbar { display: none; }
 .homescroll > * { flex: none; }
+.homescroll { overflow-x: hidden; }
+.pagehold { position: relative; perspective: 1500px; display: flex; flex-direction: column; gap: 10px; }
+.pagehold > .sheet { position: absolute; left: 0; top: 0; z-index: 6; pointer-events: none; backface-visibility: hidden; border-radius: 10px; overflow: hidden; will-change: transform; }
 .map { position: relative; height: calc(var(--n, 6) * 96px + 24px); }
 .map.flat { height: auto; }
 .worldbar { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 2px 2px 0; }
@@ -374,8 +377,10 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: 
     <div class="homescroll" id="homeScroll">
       <h1 class="logo" id="logo" aria-label="Doodle Lab"></h1>
       <div class="hero"><div class="heroG" id="heroG"></div><p class="tag">Draw it. Test it.<br><b>The ball's life depends on it.</b></p></div>
-      <div class="worldbar" id="worldBar"></div>
-      <div class="map" id="map"></div>
+      <div class="pagehold" id="pageHold">
+        <div class="worldbar" id="worldBar"></div>
+        <div class="map" id="map"></div>
+      </div>
     </div>
     <button class="daily" id="daily" aria-label="Daily challenge">
       <span class="cal"><i>DAILY</i><b id="dailyNum">1</b></span>
@@ -459,7 +464,7 @@ const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).
 const C = { board: css('--board'), grid: css('--grid'), text: css('--text'), ink: css('--ink'), marker: css('--marker'), cargo: css('--cargo'), water: css('--water') };
 
 // ---------- Saved stars ----------
-const NUM_LEVELS = 36;
+const NUM_LEVELS = 37;
 let best = Array(NUM_LEVELS).fill(0), dailySave = { date: '', stars: 0, streak: 0, last: '' };
 try { const v = JSON.parse(localStorage.getItem('doodlelab.stars') || 'null'); if (Array.isArray(v)) v.slice(0, NUM_LEVELS).forEach((n, i) => { best[i] = n | 0; }); } catch (e) { /* storage blocked */ }
 try { const v = JSON.parse(localStorage.getItem('doodlelab.daily') || 'null'); if (v && typeof v === 'object') dailySave = Object.assign(dailySave, v); } catch (e) { /* storage blocked */ }
@@ -1919,6 +1924,42 @@ const LEVELS = [
       };
     },
   },
+  {
+    id: 'road', short: 'Road', cargo: true, title: 'The Road', ink: 260, worldW: W, live: true,
+    text: 'The ball rolls by itself, and there are gaps ahead! You can keep drawing while it rolls. Press Test, then lay bridges down just in time.',
+    zone: { x0: 20, y0: 340, x1: 345, y1: 440 },
+    make(engine) {
+      const statics = [rect(180, 600, 360, 200), rect(60, 490, 120, 120), rect(220, 490, 60, 120), rect(340, 490, 40, 120), rect(-12, 330, 24, 400), rect(372, 330, 24, 400)];
+      const cargo = makeGerald(30, 416);
+      let cargoIn = false, doneAt = null;
+      return {
+        statics, cargo, duration: 16, live: true, bodyOpts: { frictionAir: AIR, friction: 0.9 },
+        tick(t) {
+          glueInk(this);
+          if (!cargoIn && t > 0.3) { Composite.add(engine.world, cargo); cargoIn = true; }
+          if (cargoIn && cargo.position.y < 440) { const vx = cargo.velocity.x + (1.3 - cargo.velocity.x) * 0.15; Body.setVelocity(cargo, { x: vx, y: cargo.velocity.y }); Body.setAngularVelocity(cargo, vx / 13); }
+          if (doneAt == null && cargoIn && cargo.position.x > 334 && cargo.position.y < 430) doneAt = t;
+        },
+        judge(t, body, inkUsed) {
+          if (cargoIn && doneAt == null && cargo.position.y > 468) return { stars: 0, title: 'Splash.', text: 'The ball rolled into a gap. Start the bridge before the ball gets there, and let it reach both sides.', stat: '' };
+          if (doneAt != null && t > doneAt + 0.4) {
+            const pct = Math.round(inkUsed / budget() * 100), s = inkStars(inkUsed, budget(), 0.9, 0.7);
+            return { stars: s, title: pick(['Made it across!', 'Just in time.', 'Road builder!'], s / 3.01), text: s < 3 ? 'The ball reached the flag. Shorter bridges save ink.' : 'Two neat bridges, drawn at just the right time.', stat: `Ink used: ${pct}%` };
+          }
+          if (t >= 16) return { stars: 0, title: 'Stuck.', text: 'The ball stopped before the flag. Keep the road smooth and level with the ground.', stat: '' };
+          return null;
+        },
+        drawBack(c, ts) {
+          c.save(); c.fillStyle = 'rgba(232,69,47,.1)'; c.fillRect(120, 430, 70, 70); c.fillRect(250, 430, 70, 70);
+          c.fillStyle = 'rgba(232,69,47,.8)'; c.font = '400 12px "Permanent Marker", sans-serif'; c.textAlign = 'center'; c.fillText('gap', 155, 470); c.fillText('gap', 285, 470);
+          c.strokeStyle = C.text; c.lineWidth = 4; c.beginPath(); c.moveTo(346, 430); c.lineTo(346, 372); c.stroke();
+          c.fillStyle = C.marker; c.beginPath(); c.moveTo(346, 372); c.lineTo(366, 380 + Math.sin(ts / 200) * 2); c.lineTo(346, 389); c.closePath(); c.fill();
+          if (S.mode === 'run' && cur) { c.strokeStyle = 'rgba(33,89,240,.8)'; c.lineWidth = 8; c.lineCap = 'round'; c.lineJoin = 'round'; c.beginPath(); cur.forEach((q, i) => i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y)); c.stroke(); }
+          c.restore();
+        },
+      };
+    },
+  },
 ];
 
 // ---------- Game state ----------
@@ -1965,7 +2006,7 @@ const nodePos = (k, n) => [ZIGZAG[k % ZIGZAG.length], (k + 0.5) / n * 100];
 // Pages of tests. A page opens when every test on the page before it is done and enough stars are collected.
 const WORLDS = [
   { name: 'Notebook', levels: [0, 1, 34, 14, 6, 31, 32, 3, 35, 30, 2, 7, 5, 12, 13], need: 30 },
-  { name: 'Blueprint', levels: [15, 21, 20, 28, 16, 25, 17, 23, 24, 19, 22, 27, 26, 29, 18], need: 30 },
+  { name: 'Blueprint', levels: [15, 21, 20, 28, 16, 25, 17, 23, 24, 36, 22, 27, 26, 29, 18], need: 30 },
 ];
 const PLAYABLE = WORLDS[0].levels;                           // the daily challenge draws from the first page, so it is the same for everybody
 const worldOf = i => WORLDS.findIndex(w => w.levels.includes(i));
@@ -1981,9 +2022,9 @@ function buildLogo() {
   const word = (w, base, cls) => '<span class="w ' + cls + '">' + [...w].map((ch, i) => '<span class="l" style="--c:' + cols[(i + base) % 6] + ';--d:' + ((i + base) * 70) + 'ms">' + ch + '</span>').join('') + '</span>';
   $('logo').innerHTML = word('Doodle', 0, 'w1') + word('Lab', 2, 'w2');
 }
-function renderHome() {
+function renderHome(keepTheme) {
   const W0 = WORLDS[viewWorld], open = worldOpen(viewWorld), L = W0.levels, n = L.length, st = worldStats(viewWorld), nw = WORLDS[viewWorld + 1];
-  document.body.dataset.world = viewWorld;
+  if (!keepTheme) document.body.dataset.world = viewWorld;
   const nextPos = open ? L.findIndex(i => best[i] === 0) : -1;
   let sub = '';
   if (!open) sub = 'Locked';
@@ -2018,12 +2059,43 @@ function renderHome() {
   $('dailyStreak').innerHTML = live && dailySave.streak > 0 ? FLAME + dailySave.streak : '';
   renderRewardsHome();
 }
+let turning = false;
+function turnPage(dir) {                                     // the old page lifts and turns over like a notebook page, and the new one is underneath
+  const to = clamp(viewWorld + dir, 0, WORLDS.length - 1);
+  if (to === viewWorld || turning) return;
+  const hold = $('pageHold'), sc = $('homeScroll'), calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  sc.scrollTop = 0;
+  let sheet = null;
+  if (!calm && hold.animate) {
+    sheet = hold.cloneNode(true); sheet.removeAttribute('id'); sheet.querySelectorAll('[id]').forEach(n => n.removeAttribute('id'));
+    sheet.classList.add('sheet');
+    sheet.style.width = hold.offsetWidth + 'px'; sheet.style.height = hold.offsetHeight + 'px'; sheet.style.background = getComputedStyle(document.body).getPropertyValue('--paper') || '#f4faff';
+    sheet.style.transformOrigin = dir > 0 ? 'left center' : 'right center';
+    hold.appendChild(sheet);
+  }
+  viewWorld = to; renderHome(!!sheet);
+  if (!sheet) return;
+  turning = true; noise(0.22, 1300, 0.06);
+  const a = sheet.animate([
+    { transform: 'rotateY(0deg)', filter: 'brightness(1)', opacity: 1, boxShadow: '0 4px 14px rgba(27,35,64,.18)' },
+    { transform: 'rotateY(' + (dir > 0 ? -80 : 80) + 'deg)', filter: 'brightness(.9)', opacity: 1, boxShadow: '0 14px 30px rgba(27,35,64,.35)', offset: 0.7 },
+    { transform: 'rotateY(' + (dir > 0 ? -104 : 104) + 'deg)', filter: 'brightness(.82)', opacity: 0, boxShadow: '0 14px 30px rgba(27,35,64,.2)' },
+  ], { duration: 620, easing: 'cubic-bezier(.4,.05,.3,1)', fill: 'forwards' });
+  setTimeout(() => { document.body.dataset.world = viewWorld; }, 260);                  // the colours change halfway through the turn
+  a.onfinish = () => { sheet.remove(); turning = false; document.body.dataset.world = viewWorld; };
+}
 $('worldBar').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b || b.disabled) return;
-  viewWorld = clamp(viewWorld + (b.id === 'wNext' ? 1 : -1), 0, WORLDS.length - 1);
-  renderHome(); $('homeScroll').scrollTop = 0; enterAnim($('map'));
+  turnPage(b.id === 'wNext' ? 1 : -1);
 });
+let swipe = null;                                            // or just swipe sideways on the map
+$('homeScroll').addEventListener('touchstart', e => { const t = e.changedTouches[0]; swipe = { x: t.clientX, y: t.clientY }; }, { passive: true });
+$('homeScroll').addEventListener('touchend', e => {
+  if (!swipe) return;
+  const t = e.changedTouches[0], dx = t.clientX - swipe.x, dy = t.clientY - swipe.y; swipe = null;
+  if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.8) turnPage(dx < 0 ? 1 : -1);
+}, { passive: true });
 
 function enterAnim(el) { el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter'); }
 function showHome() {
@@ -2485,6 +2557,7 @@ const HINTS = [
   [pts([[53, 370], [56, 385], [66, 398], [80, 406], [90, 408], [100, 406], [114, 398], [124, 385], [127, 370], [124, 355], [114, 342], [100, 334], [90, 332], [80, 334], [66, 342], [56, 355], [53, 370]])],     // wheel: a small ring
   [(() => { const raw = Array.from({ length: 80 }, (_, i) => { const t = i / 80 * Math.PI * 2; return { x: 16 * Math.sin(t) ** 3, y: -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) }; }), xs = raw.map(q => q.x), ys = raw.map(q => q.y), k = 190 / (Math.max(...xs) - Math.min(...xs)), cx = (Math.max(...xs) + Math.min(...xs)) / 2, cy = (Math.max(...ys) + Math.min(...ys)) / 2; const out = raw.map(q => ({ x: 180 + (q.x - cx) * k, y: 270 + (q.y - cy) * k })); out.push(out[0]); return out; })()],     // trace: the heart itself
   [pts([[30, 200], [160, 250]])],                                                           // ferry: a small ramp that throws the ball onto the ferry
+  [pts([[108, 426], [202, 426]]), pts([[238, 426], [332, 426]])],                           // road: a bridge over each gap
 ];
 function buyHint() {
   if (rw.coins < HINT_COST) { showToast('You need ' + (HINT_COST - rw.coins) + ' more drops for a hint. Earn stars or open your daily gift.'); return false; }
@@ -2527,11 +2600,17 @@ const inGround = p => {
 let down = false;
 function finishStroke() {
   if (cur && cur.length === 1) cur.push({ x: cur[0].x + 0.1, y: cur[0].y });
+  const done = cur;
   cur = null; drawing = false; recountInk();
+  if (done && S.mode === 'run' && S.scene.live) {                // ink drawn during the test turns into solid road right away
+    const infos = buildBodies([done], S.scene.bodyOpts);
+    for (const i of infos) { Body.setStatic(i.body, true); S.bodies.push(i); Composite.add(S.engine.world, i.body); }
+  }
 }
 
+const canDraw = () => S.mode === 'draw' || (S.mode === 'run' && S.scene && S.scene.live);
 cv.addEventListener('pointerdown', e => {
-  if (S.mode !== 'draw') return;
+  if (!canDraw()) return;
   const p = toWorld(e);
   if (!inZone(p) || inGround(p) || S.inkUsed >= budget()) return;
   try { cv.setPointerCapture(e.pointerId); } catch (err) { /* some WebViews */ }
@@ -2625,12 +2704,12 @@ function nearestTo(infos, P) {
 
 function startTest() {
   if (S.mode !== 'draw') return;
-  if (!S.strokes.length) { flash('Draw something first.'); return; }
+  if (!S.strokes.length && !S.scene.live) { flash('Draw something first.'); return; }
   loadLevel(S.lv, false);                                    // a fresh world every time
   const infos = buildBodies(S.scene.mirror ? S.strokes.concat(S.strokes.map(mirrorStroke)) : S.strokes, S.scene.bodyOpts);
-  if (!infos.length) { flash('Draw something first.'); return; }
+  if (!infos.length && !S.scene.live) { flash('Draw something first.'); return; }
   S.bodies = infos;
-  S.main = S.scene.pick ? S.scene.pick(infos) : infos.reduce((a, b) => b.body.mass > a.body.mass ? b : a);       // the one the level watches: the heaviest, or the one on the hinge
+  S.main = !infos.length ? { body: S.scene.cargo } : S.scene.pick ? S.scene.pick(infos) : infos.reduce((a, b) => b.body.mass > a.body.mass ? b : a);       // the one the level watches: the heaviest, or the one on the hinge
   S.body = S.main.body;
   Composite.add(S.engine.world, infos.map(i => i.body));
   if (S.scene.onBody) S.scene.onBody(S.body);
