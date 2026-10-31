@@ -459,7 +459,7 @@ const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).
 const C = { board: css('--board'), grid: css('--grid'), text: css('--text'), ink: css('--ink'), marker: css('--marker'), cargo: css('--cargo'), water: css('--water') };
 
 // ---------- Saved stars ----------
-const NUM_LEVELS = 34;
+const NUM_LEVELS = 36;
 let best = Array(NUM_LEVELS).fill(0), dailySave = { date: '', stars: 0, streak: 0, last: '' };
 try { const v = JSON.parse(localStorage.getItem('doodlelab.stars') || 'null'); if (Array.isArray(v)) v.slice(0, NUM_LEVELS).forEach((n, i) => { best[i] = n | 0; }); } catch (e) { /* storage blocked */ }
 try { const v = JSON.parse(localStorage.getItem('doodlelab.daily') || 'null'); if (v && typeof v === 'object') dailySave = Object.assign(dailySave, v); } catch (e) { /* storage blocked */ }
@@ -1842,6 +1842,83 @@ const LEVELS = [
       };
     },
   },
+  {
+    id: 'trace', short: 'Trace', cargo: false, title: 'The Trace', ink: 900, worldW: W,
+    text: 'No physics this time, just your hand. Trace the heart as neatly as you can. Stay on the line and cover all of it.',
+    zone: { x0: 20, y0: 70, x1: 340, y1: 470 },
+    make(engine) {
+      const raw = Array.from({ length: 160 }, (_, i) => { const t = i / 160 * Math.PI * 2; return { x: 16 * Math.sin(t) ** 3, y: -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) }; });
+      const x0 = Math.min(...raw.map(q => q.x)), x1 = Math.max(...raw.map(q => q.x)), y0 = Math.min(...raw.map(q => q.y)), y1 = Math.max(...raw.map(q => q.y)), k = 190 / (x1 - x0);
+      const target = raw.map(q => ({ x: 180 + (q.x - (x0 + x1) / 2) * k, y: 270 + (q.y - (y0 + y1) / 2) * k }));
+      target.push(target[0]);
+      const statics = [rect(180, 600, 360, 200)];
+      const score = strokes => {
+        const dots = []; for (const st of strokes) { const r = resample(st, 4); for (const q of r) dots.push(q); }
+        if (!dots.length) return { cover: 0, stray: 0 };
+        let covered = 0; for (const q of target) { let hit = false; for (const d of dots) if (Math.hypot(d.x - q.x, d.y - q.y) < 12) { hit = true; break; } if (hit) covered++; }
+        let off = 0; for (const d of dots) { let near = false; for (const q of target) if (Math.hypot(d.x - q.x, d.y - q.y) < 18) { near = true; break; } if (!near) off++; }
+        return { cover: covered / target.length, stray: off / dots.length };
+      };
+      return {
+        statics, duration: 3, bodyOpts: { frictionAir: AIR },
+        tick() { glueInk(this); },
+        judge(t, body, inkUsed) {
+          if (t < 1.2) return null;
+          const r = score(S.strokes), c = Math.round(r.cover * 100), stat = 'Traced: ' + c + '%';
+          const s = r.cover >= 0.93 && r.stray <= 0.1 ? 3 : r.cover >= 0.85 && r.stray <= 0.25 ? 2 : r.cover >= 0.7 ? 1 : 0;
+          return { stars: s, title: ['Not quite.', 'A rough heart.', 'Nice heart!', 'Picture perfect.'][s], text: ['Much of the line is not covered. Follow the dotted heart all the way around.', 'You got most of it. Stay closer to the line and close the gaps.', 'Neat. A few spots wobble off the line.', 'Smooth and exact. The artist is in.'][s], stat };
+        },
+        drawBack(c, ts) {
+          const r = score(S.strokes);
+          c.save(); c.strokeStyle = 'rgba(232,69,47,.55)'; c.lineWidth = 3; c.setLineDash([3, 9]); c.lineCap = 'round'; c.beginPath(); target.forEach((q, i) => i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y)); c.stroke(); c.setLineDash([]);
+          c.fillStyle = r.cover >= 0.93 ? '#14a05a' : C.marker; c.font = '400 14px "Permanent Marker", sans-serif'; c.textAlign = 'center'; c.fillText('Traced: ' + Math.round(r.cover * 100) + '%', 180, 78 + 14);
+          c.restore();
+        },
+      };
+    },
+  },
+  {
+    id: 'ferry', short: 'Ferry', cargo: true, title: 'The Ferry', ink: 220, worldW: W,
+    text: 'The ferry glides back and forth, and the ball drops on the left. Your ink is glued to the page here. Steer the ball so it lands on the ferry, and stays on it for the ride.',
+    zone: { x0: 20, y0: 130, x1: 340, y1: 420 },
+    make(engine) {
+      const B = { x: 60, y: 60 }, Y = 440, AMP = 115, SPD = 0.9;
+      const statics = [rect(180, 600, 360, 200), rect(-12, 330, 24, 400), rect(372, 330, 24, 400)];
+      const cargo = makeGerald(B.x, B.y);
+      const pad = Bodies.rectangle(180, Y, 110, 14, { density: 0.2, friction: 1, restitution: 0, label: 'ferry' });
+      let prevX = 180, padIn = false, cargoIn = false, ridden = 0;
+      const padX = t => 180 + AMP * Math.sin(SPD * t);
+      return {
+        statics, cargo, duration: 9, bodyOpts: { frictionAir: AIR }, blocked: p => Math.hypot(p.x - B.x, p.y - B.y) < 24,
+        tick(t) {
+          glueInk(this);
+          if (!padIn) { Composite.add(engine.world, pad); padIn = true; }
+          const px = padX(t);
+          Body.setPosition(pad, { x: px, y: Y }); Body.setVelocity(pad, { x: px - prevX, y: 0 }); Body.setAngle(pad, 0); Body.setAngularVelocity(pad, 0); prevX = px;
+          if (!cargoIn && t > 0.3) { Composite.add(engine.world, cargo); cargoIn = true; }
+          const on = cargoIn && Math.abs(cargo.position.x - px) < 52 && cargo.position.y > Y - 30 && cargo.position.y < Y - 12;
+          ridden = on ? ridden + 1 : 0;
+        },
+        judge(t, body, inkUsed) {
+          if (t < 8.6) return null;
+          if (ridden > 60) {
+            const pct = Math.round(inkUsed / budget() * 100), s = inkStars(inkUsed, budget(), 0.85, 0.6);
+            return { stars: s, title: pick(['All aboard!', 'Smooth landing.', 'Perfect timing.'], s / 3.01), text: s < 3 ? 'The ball rode the ferry. Can you do it with less ink?' : 'A tiny nudge and a perfect landing.', stat: `Ink used: ${pct}%` };
+          }
+          return { stars: 0, title: 'Missed the boat.', text: 'The ball was not on the ferry at the end. Time the drop: send it where the ferry will be, not where it is.', stat: '' };
+        },
+        drawBack(c, ts) {
+          const px = padX(S.mode === 'run' ? S.t : 0);
+          c.save();
+          c.strokeStyle = 'rgba(60,90,120,.35)'; c.lineWidth = 2; c.setLineDash([4, 8]); c.beginPath(); c.moveTo(60, Y + 18); c.lineTo(300, Y + 18); c.stroke(); c.setLineDash([]);
+          c.fillStyle = '#ffd26a'; c.strokeStyle = C.text; c.lineWidth = 3; c.fillRect(px - 55, Y - 7, 110, 14); c.strokeRect(px - 55, Y - 7, 110, 14);
+          c.fillStyle = C.marker; c.fillRect(px - 8, Y - 18, 16, 11); c.strokeRect(px - 8, Y - 18, 16, 11);
+          if (S.mode === 'draw') { c.strokeStyle = 'rgba(232,69,47,.4)'; c.lineWidth = 2; c.setLineDash([5, 6]); c.beginPath(); c.arc(B.x, B.y, 24, 0, 6.3); c.stroke(); c.setLineDash([]); }
+          c.restore();
+        },
+      };
+    },
+  },
 ];
 
 // ---------- Game state ----------
@@ -1887,7 +1964,7 @@ const ZIGZAG = [24, 70, 30, 72, 28, 68];
 const nodePos = (k, n) => [ZIGZAG[k % ZIGZAG.length], (k + 0.5) / n * 100];
 // Pages of tests. A page opens when every test on the page before it is done and enough stars are collected.
 const WORLDS = [
-  { name: 'Notebook', levels: [0, 1, 33, 6, 31, 32, 3, 4, 30, 2, 7, 5, 12, 13, 14], need: 30 },
+  { name: 'Notebook', levels: [0, 1, 34, 14, 6, 31, 32, 3, 35, 30, 2, 7, 5, 12, 13], need: 30 },
   { name: 'Blueprint', levels: [15, 21, 20, 28, 16, 25, 17, 23, 24, 19, 22, 27, 26, 29, 18], need: 30 },
 ];
 const PLAYABLE = WORLDS[0].levels;                           // the daily challenge draws from the first page, so it is the same for everybody
@@ -2406,6 +2483,8 @@ const HINTS = [
   [pts([[98, 399], [122, 366]]), pts([[190, 120], [240, 122]])],                            // laser: one mirror up, one mirror down
   [pts([[125, 440], [235, 440]])],                                                          // shade: wide, and low over the flower
   [pts([[53, 370], [56, 385], [66, 398], [80, 406], [90, 408], [100, 406], [114, 398], [124, 385], [127, 370], [124, 355], [114, 342], [100, 334], [90, 332], [80, 334], [66, 342], [56, 355], [53, 370]])],     // wheel: a small ring
+  [(() => { const raw = Array.from({ length: 80 }, (_, i) => { const t = i / 80 * Math.PI * 2; return { x: 16 * Math.sin(t) ** 3, y: -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) }; }), xs = raw.map(q => q.x), ys = raw.map(q => q.y), k = 190 / (Math.max(...xs) - Math.min(...xs)), cx = (Math.max(...xs) + Math.min(...xs)) / 2, cy = (Math.max(...ys) + Math.min(...ys)) / 2; const out = raw.map(q => ({ x: 180 + (q.x - cx) * k, y: 270 + (q.y - cy) * k })); out.push(out[0]); return out; })()],     // trace: the heart itself
+  [pts([[30, 200], [160, 250]])],                                                           // ferry: a small ramp that throws the ball onto the ferry
 ];
 function buyHint() {
   if (rw.coins < HINT_COST) { showToast('You need ' + (HINT_COST - rw.coins) + ' more drops for a hint. Earn stars or open your daily gift.'); return false; }
