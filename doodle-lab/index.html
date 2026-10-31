@@ -459,7 +459,7 @@ const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).
 const C = { board: css('--board'), grid: css('--grid'), text: css('--text'), ink: css('--ink'), marker: css('--marker'), cargo: css('--cargo'), water: css('--water') };
 
 // ---------- Saved stars ----------
-const NUM_LEVELS = 30;
+const NUM_LEVELS = 34;
 let best = Array(NUM_LEVELS).fill(0), dailySave = { date: '', stars: 0, streak: 0, last: '' };
 try { const v = JSON.parse(localStorage.getItem('doodlelab.stars') || 'null'); if (Array.isArray(v)) v.slice(0, NUM_LEVELS).forEach((n, i) => { best[i] = n | 0; }); } catch (e) { /* storage blocked */ }
 try { const v = JSON.parse(localStorage.getItem('doodlelab.daily') || 'null'); if (v && typeof v === 'object') dailySave = Object.assign(dailySave, v); } catch (e) { /* storage blocked */ }
@@ -558,6 +558,15 @@ function drawPin(c, P, ts) {
 const NOT_ON_DOT = { stars: 0, title: 'Not on the dot.', text: 'Nothing holds your drawing up unless it touches the red dot. Draw right through the dot.', stat: '' };
 
 const mirrorStroke = st => { const m = st.map(p => ({ x: W - p.x, y: p.y })); m.m = st.m; return m; };
+// light: a ray against line segments (used by the laser and the shade)
+const raySeg = (o, d, a, b) => {
+  const sx = b.x - a.x, sy = b.y - a.y, den = d.x * sy - d.y * sx;
+  if (Math.abs(den) < 1e-9) return null;
+  const t = ((a.x - o.x) * sy - (a.y - o.y) * sx) / den, u = ((a.x - o.x) * d.y - (a.y - o.y) * d.x) / den;
+  return t > 1e-3 && u >= 0 && u <= 1 ? { t, sx, sy } : null;
+};
+const inkSegs = strokes => { const out = []; for (const st of strokes) for (let i = 1; i < st.length; i++) out.push([st[i - 1], st[i]]); return out; };
+const boxSegs = (x0, y0, x1, y1) => [[{ x: x0, y: y0 }, { x: x1, y: y0 }], [{ x: x1, y: y0 }, { x: x1, y: y1 }], [{ x: x1, y: y1 }, { x: x0, y: y1 }], [{ x: x0, y: y1 }, { x: x0, y: y0 }]];
 const glueInk = sc => {
   if (sc.stuck) return;
   const rest = sc.bodyOpts && sc.bodyOpts.restitution;
@@ -1663,6 +1672,176 @@ const LEVELS = [
       };
     },
   },
+  {
+    id: 'balloon', short: 'Balloon', cargo: true, title: 'The Balloon', ink: 400, worldW: W,
+    text: 'Air lifts a drawing in proportion to the space it holds, and ink is heavy. The ball hangs under whatever you draw. Make a balloon big enough to lift it into the sky.',
+    zone: { x0: 30, y0: 120, x1: 330, y1: 400 },
+    make(engine) {
+      const LIFT = 4.2e-5;
+      const statics = [rect(180, 600, 360, 200), rect(-12, 330, 24, 400), rect(372, 330, 24, 400)];
+      const cargo = makeGerald(180, 470, { frictionAir: AIR });
+      let up = 0, upAt = null;
+      return {
+        statics, cargo, duration: 9, drag: true, bodyOpts: { frictionAir: 0.0, friction: 0.5 },
+        onBody(body) {
+          const ax = (body.bounds.min.x + body.bounds.max.x) / 2, ay = body.bounds.max.y;
+          Body.setPosition(cargo, { x: ax, y: ay + 52 });
+          Composite.add(engine.world, [cargo, Matter.Constraint.create({ bodyA: body, pointA: { x: ax - body.position.x, y: ay - body.position.y }, bodyB: cargo, pointB: { x: 0, y: 0 }, length: 52, stiffness: 0.5, damping: 0.1, render: { visible: false } })]);
+        },
+        tick(t) {
+          S.bodies.forEach(i => Body.applyForce(i.body, i.body.position, { x: 0, y: -LIFT * i.vol.length }));
+          up = cargo.position.y < 230 ? up + 1 : 0;
+          if (upAt == null && up > 40) upAt = t;
+        },
+        judge(t, body, inkUsed) {
+          if (upAt != null) {
+            const s = upAt < 2.1 ? 3 : upAt < 3.2 ? 2 : 1;
+            return { stars: s, title: ['', 'Floating!', 'Up, up and away!', 'What a balloon!'][s], text: ['', 'It rose, slowly. A bigger shape lifts faster.', 'A good balloon. A rounder shape holds more air for the same ink.', 'A perfect balloon: lots of space, little ink.'][s], stat: 'Lift-off in ' + (upAt - 0.0).toFixed(1) + ' s' };
+          }
+          if (t >= 9) return { stars: 0, title: 'Too heavy.', text: 'The ink weighs more than the air can lift. A closed round shape holds the most space for its ink, and a line holds almost none.', stat: '' };
+          return null;
+        },
+        drawBack(c, ts) {
+          c.save(); c.strokeStyle = 'rgba(60,90,120,.35)'; c.lineWidth = 2; c.setLineDash([4, 8]); c.beginPath(); c.moveTo(20, 230); c.lineTo(340, 230); c.stroke(); c.setLineDash([]);
+          c.fillStyle = 'rgba(60,90,120,.6)'; c.font = '400 11px "Patrick Hand", sans-serif'; c.textAlign = 'right'; c.fillText('lift the ball above here', 340, 224);
+          c.restore();
+        },
+      };
+    },
+  },
+  {
+    id: 'laser', short: 'Laser', cargo: false, title: 'The Laser', ink: 200, worldW: W,
+    text: 'Anything you draw is a mirror, and the red beam bounces off it. The wall blocks the beam. Draw mirrors that bounce it over the wall and into the gem. You can watch the beam as you draw.',
+    zone: { x0: 20, y0: 40, x1: 340, y1: 440 },
+    make(engine) {
+      const O = { x: 30, y: 450 }, D0 = { x: Math.cos(0.7), y: -Math.sin(0.7) }, GEM = { x: 300, y: 430, r: 18 };
+      const WALL = { x0: 180, y0: 230, x1: 194, y1: 500 };
+      const statics = [rect(180, 600, 360, 200), rect((WALL.x0 + WALL.x1) / 2, (WALL.y0 + WALL.y1) / 2, WALL.x1 - WALL.x0, WALL.y1 - WALL.y0)];
+      const hard = boxSegs(WALL.x0, WALL.y0, WALL.x1, WALL.y1).concat(boxSegs(0, 0, 360, 520));
+      const trace = strokes => {
+        const mirrors = inkSegs(strokes), pts = [{ x: O.x, y: O.y }];
+        let o = { x: O.x, y: O.y }, d = { x: D0.x, y: D0.y }, hit = false;
+        for (let k = 0; k < 14 && !hit; k++) {
+          let best = null, bm = false;
+          for (const [a, b] of hard) { const r = raySeg(o, d, a, b); if (r && (!best || r.t < best.t)) { best = r; bm = false; } }
+          for (const [a, b] of mirrors) { const r = raySeg(o, d, a, b); if (r && (!best || r.t < best.t)) { best = r; bm = true; } }
+          const tEnd = best ? best.t : 900, vx = GEM.x - o.x, vy = GEM.y - o.y, tc = clamp(vx * d.x + vy * d.y, 0, tEnd);
+          if (Math.hypot(vx - d.x * tc, vy - d.y * tc) < GEM.r) { pts.push({ x: o.x + d.x * tc, y: o.y + d.y * tc }); hit = true; break; }
+          o = { x: o.x + d.x * tEnd, y: o.y + d.y * tEnd }; pts.push(o);
+          if (!best || !bm) break;
+          const L = Math.hypot(best.sx, best.sy), nx = -best.sy / L, ny = best.sx / L, dot = d.x * nx + d.y * ny;
+          d = { x: d.x - 2 * dot * nx, y: d.y - 2 * dot * ny };
+        }
+        return { pts, hit };
+      };
+      return {
+        statics, duration: 3, bodyOpts: { frictionAir: AIR },
+        tick() { glueInk(this); },
+        judge(t, body, inkUsed) {
+          if (t < 1.4) return null;
+          const r = trace(S.strokes);
+          if (!r.hit) return { stars: 0, title: 'Missed the gem.', text: 'The beam never reached the gem. Watch the red line while you draw, and tilt each mirror so it bounces where you want.', stat: '' };
+          const pct = Math.round(inkUsed / budget() * 100), s = inkStars(inkUsed, budget(), 0.75, 0.45);
+          return { stars: s, title: pick(['Gem lit!', 'Bounce, bounce, bullseye.', 'Brilliant!'], s / 3.01), text: s < 3 ? 'The gem is lit. Can you do it with shorter mirrors?' : 'Tiny mirrors, perfect aim.', stat: `Ink used: ${pct}%` };
+        },
+        drawBack(c, ts) {
+          const r = trace(S.strokes), total = r.pts.reduce((a, q, i) => i ? a + Math.hypot(q.x - r.pts[i - 1].x, q.y - r.pts[i - 1].y) : 0, 0), show = S.mode === 'run' ? Math.min(1, S.t / 0.9) * total : total;
+          c.save();
+          c.fillStyle = '#ffd26a'; c.strokeStyle = C.text; c.lineWidth = 2.5; c.fillRect(WALL.x0, WALL.y0, 14, WALL.y1 - WALL.y0); c.strokeRect(WALL.x0, WALL.y0, 14, WALL.y1 - WALL.y0);
+          c.strokeStyle = 'rgba(232,69,47,.85)'; c.lineWidth = 3; c.lineCap = 'round'; c.shadowColor = 'rgba(232,69,47,.7)'; c.shadowBlur = 8; c.beginPath(); c.moveTo(r.pts[0].x, r.pts[0].y);
+          let left = show;
+          for (let i = 1; i < r.pts.length && left > 0; i++) { const a = r.pts[i - 1], b = r.pts[i], l = Math.hypot(b.x - a.x, b.y - a.y); if (l <= left) { c.lineTo(b.x, b.y); left -= l; } else { c.lineTo(a.x + (b.x - a.x) * left / l, a.y + (b.y - a.y) * left / l); left = 0; } }
+          c.stroke(); c.shadowBlur = 0;
+          c.fillStyle = '#8a99a8'; c.strokeStyle = C.text; c.lineWidth = 3; c.fillRect(14, 440, 22, 20); c.strokeRect(14, 440, 22, 20);
+          c.fillStyle = r.hit ? '#27c36a' : '#b58cff'; c.strokeStyle = C.text; c.lineWidth = 3; c.beginPath(); c.moveTo(GEM.x, GEM.y - GEM.r); c.lineTo(GEM.x + GEM.r, GEM.y); c.lineTo(GEM.x, GEM.y + GEM.r); c.lineTo(GEM.x - GEM.r, GEM.y); c.closePath(); c.fill(); c.stroke();
+          c.restore();
+        },
+      };
+    },
+  },
+  {
+    id: 'shade', short: 'Shade', cargo: false, title: 'The Shade', ink: 220, worldW: W,
+    text: 'The sun crosses the sky from left to right. Your ink blocks sunlight. Draw a shade so the flower stays in the shadow all day. A shade close to the flower needs less ink.',
+    zone: { x0: 20, y0: 300, x1: 340, y1: 470 },
+    make(engine) {
+      const FL = { x0: 160, x1: 200, y: 478 }, STEPS = 17;
+      const statics = [rect(180, 600, 360, 200)];
+      const sun = u => ({ x: 10 + 340 * u, y: 300 - 190 * Math.sin(Math.PI * u) });
+      const exposed = (strokes, u) => {
+        const segs = inkSegs(strokes), sp = sun(u);
+        let open = 0;
+        for (let i = 0; i < 10; i++) {
+          const P = { x: FL.x0 + 2 + (FL.x1 - FL.x0 - 4) * i / 9, y: FL.y }, dx = sp.x - P.x, dy = sp.y - P.y, L = Math.hypot(dx, dy), d = { x: dx / L, y: dy / L };
+          let blocked = false;
+          for (const [a, b] of segs) { const r = raySeg(P, d, a, b); if (r && r.t < L) { blocked = true; break; } }
+          if (!blocked) open++;
+        }
+        return open;
+      };
+      const shadedCount = strokes => { let n = 0; for (let k = 0; k < STEPS; k++) if (exposed(strokes, k / (STEPS - 1)) === 0) n++; return n; };
+      return {
+        statics, duration: 6, bodyOpts: { frictionAir: AIR },
+        tick() { glueInk(this); },
+        judge(t, body, inkUsed) {
+          if (t < 5.6) return null;
+          const n = shadedCount(S.strokes);
+          if (n === STEPS) { const pct = Math.round(inkUsed / budget() * 100), s = inkStars(inkUsed, budget(), 0.85, 0.6); return { stars: s, title: pick(['Cool as a cucumber.', 'Shady business.', 'The flower is happy!'], s / 3.01), text: s < 3 ? 'The flower stayed in shade all day. A lower, smaller shade does the same with less ink.' : 'A small shade in exactly the right place.', stat: `Ink used: ${pct}%` }; }
+          return { stars: n >= 13 ? 1 : 0, title: n >= 13 ? 'Mostly shaded.' : 'Sunburnt.', text: n >= 13 ? 'It was in the sun for part of the day. The sun starts and ends low and to the side, so the shade has to reach out wide.' : 'The sun got to the flower. The shade must cover where the sun starts and ends, low on both sides.', stat: n + ' of ' + STEPS + ' times of day shaded' };
+        },
+        drawBack(c, ts) {
+          const u = S.mode === 'run' ? clamp(S.t / 5, 0, 1) : 0, sp = sun(u), n = shadedCount(S.strokes), full = n === STEPS;
+          c.save();
+          c.fillStyle = '#ffd93b'; c.strokeStyle = C.text; c.lineWidth = 3; c.beginPath(); c.arc(sp.x, sp.y, 16, 0, 6.3); c.fill(); c.stroke();
+          c.strokeStyle = '#ffb300'; c.lineWidth = 3; c.lineCap = 'round'; for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4 + ts / 900; c.beginPath(); c.moveTo(sp.x + Math.cos(a) * 21, sp.y + Math.sin(a) * 21); c.lineTo(sp.x + Math.cos(a) * 29, sp.y + Math.sin(a) * 29); c.stroke(); }
+          c.strokeStyle = 'rgba(255,179,0,.35)'; c.lineWidth = 6; c.setLineDash([2, 10]); c.beginPath(); for (let k = 0; k <= 24; k++) { const q = sun(k / 24); k ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y); } c.stroke(); c.setLineDash([]);
+          const open = exposed(S.strokes, u);
+          c.strokeStyle = 'rgba(255,179,0,.6)'; c.lineWidth = 2; for (let i = 0; i < 4; i++) { const P = { x: FL.x0 + 4 + (FL.x1 - FL.x0 - 8) * i / 3, y: FL.y }; c.beginPath(); c.moveTo(P.x, P.y); c.lineTo(P.x + (sp.x - P.x) * 0.22, P.y + (sp.y - P.y) * 0.22); c.stroke(); }
+          c.strokeStyle = '#27a05a'; c.lineWidth = 4; c.beginPath(); c.moveTo(180, 500); c.lineTo(180, 462); c.stroke();
+          c.fillStyle = open && S.mode === 'run' ? '#ff9ec0' : '#ff7aa2'; c.strokeStyle = C.text; c.lineWidth = 2.5;
+          for (let k = 0; k < 5; k++) { const a = k * 1.2566 - 1.5708; c.beginPath(); c.arc(180 + Math.cos(a) * 10, 456 + Math.sin(a) * 10, 8, 0, 6.3); c.fill(); c.stroke(); }
+          c.fillStyle = '#ffd93b'; c.beginPath(); c.arc(180, 456, 7, 0, 6.3); c.fill(); c.stroke();
+          c.fillStyle = full ? '#14a05a' : C.marker; c.font = '400 13px "Permanent Marker", sans-serif'; c.textAlign = 'center'; c.fillText(n + ' of ' + STEPS + ' shaded', 180, 428 - 0);
+          c.restore();
+        },
+      };
+    },
+  },
+  {
+    id: 'wheel', short: 'Wheel', cargo: true, title: 'The Hamster Wheel', ink: 380, worldW: W,
+    text: 'The ball needs a ride down the hill to the flag, and it must not fall out. Draw a wheel on the slope. The ball starts in the middle of whatever you draw.',
+    zone: { x0: 20, y0: 250, x1: 190, y1: 440 },
+    make(engine) {
+      const A = { x: 0, y: 360 }, B = { x: 190, y: 500 };
+      const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy), nx = -dy / len, ny = dx / len;
+      const statics = [rect(180, 600, 360, 200), rect((A.x + B.x) / 2 + nx * 60, (A.y + B.y) / 2 + ny * 60, len + 4, 120, Math.atan2(dy, dx)), rect(-12, 330, 24, 400), rect(372, 330, 24, 400)];
+      const cargo = makeGerald(90, 408, { frictionAir: AIR });
+      let ring = null, spilled = 0, doneAt = null;
+      return {
+        statics, cargo, duration: 10, bodyOpts: { frictionAir: AIR, friction: 0.6 },
+        onBody(body) { ring = body; Body.setPosition(cargo, { x: body.position.x, y: body.position.y }); Composite.add(engine.world, cargo); },
+        tick(t, body) {
+          if (!ring) return;
+          const R = (ring.bounds.max.x - ring.bounds.min.x) / 2, d = Math.hypot(cargo.position.x - ring.position.x, cargo.position.y - ring.position.y);
+          spilled = d > R + 6 ? spilled + 1 : 0;
+          if (doneAt == null && cargo.position.x > 300 && d < R) doneAt = t;
+        },
+        judge(t, body, inkUsed) {
+          if (doneAt != null && t > doneAt + 0.6) {
+            const pct = Math.round(inkUsed / budget() * 100), s = inkStars(inkUsed, budget(), 0.9, 0.65);
+            return { stars: s, title: pick(['Rolled home!', 'Round and round.', 'Smooth ride.'], s / 3.01), text: s < 3 ? 'The ball made it to the flag inside the wheel. A smaller wheel uses less ink.' : 'A small wheel, a smooth ride.', stat: `Ink used: ${pct}%` };
+          }
+          if (spilled > 30) return { stars: 0, title: 'Spilled out.', text: 'The ball fell out of the wheel. Close the circle completely, with no gaps.', stat: '' };
+          if (t >= 10) return { stars: 0, title: 'Stuck on the hill.', text: 'The wheel never made it to the flag. A round shape rolls best, and a bigger one rolls over bumps.', stat: '' };
+          return null;
+        },
+        drawBack(c, ts) {
+          c.save(); c.strokeStyle = C.text; c.lineWidth = 4; c.beginPath(); c.moveTo(320, 500); c.lineTo(320, 430); c.stroke();
+          c.fillStyle = C.marker; c.beginPath(); c.moveTo(320, 430); c.lineTo(350, 441 + Math.sin(ts / 200) * 2); c.lineTo(320, 452); c.closePath(); c.fill();
+          c.restore();
+        },
+      };
+    },
+  },
 ];
 
 // ---------- Game state ----------
@@ -1708,7 +1887,7 @@ const ZIGZAG = [24, 70, 30, 72, 28, 68];
 const nodePos = (k, n) => [ZIGZAG[k % ZIGZAG.length], (k + 0.5) / n * 100];
 // Pages of tests. A page opens when every test on the page before it is done and enough stars are collected.
 const WORLDS = [
-  { name: 'Notebook', levels: [0, 1, 6, 3, 4, 2, 7, 5, 12, 13, 14, 8, 9, 11, 10], need: 30 },
+  { name: 'Notebook', levels: [0, 1, 33, 6, 31, 32, 3, 4, 30, 2, 7, 5, 12, 13, 14], need: 30 },
   { name: 'Blueprint', levels: [15, 21, 20, 28, 16, 25, 17, 23, 24, 19, 22, 27, 26, 29, 18], need: 30 },
 ];
 const PLAYABLE = WORLDS[0].levels;                           // the daily challenge draws from the first page, so it is the same for everybody
@@ -2223,6 +2402,10 @@ const HINTS = [
   [pts([[37, 293], [66, 324]])],                                                            // gravity switch: a small kick to the button
   [pts([[250, 497], [250, 450]])],                                                          // park it: a stopper at the right spot
   [pts([[223, 155], [221, 210]])],                                                          // orbit: a small nudge
+  [pts([[120, 330], [110, 250], [150, 200], [210, 200], [250, 250], [240, 330]])],            // balloon: a dome that holds a lot of air
+  [pts([[98, 399], [122, 366]]), pts([[190, 120], [240, 122]])],                            // laser: one mirror up, one mirror down
+  [pts([[125, 440], [235, 440]])],                                                          // shade: wide, and low over the flower
+  [pts([[53, 370], [56, 385], [66, 398], [80, 406], [90, 408], [100, 406], [114, 398], [124, 385], [127, 370], [124, 355], [114, 342], [100, 334], [90, 332], [80, 334], [66, 342], [56, 355], [53, 370]])],     // wheel: a small ring
 ];
 function buyHint() {
   if (rw.coins < HINT_COST) { showToast('You need ' + (HINT_COST - rw.coins) + ' more drops for a hint. Earn stars or open your daily gift.'); return false; }
